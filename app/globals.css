@@ -1,0 +1,9 @@
+@import "tailwindcss";
+
+/* قفل کردن پس‌زمینه تاریک با CSS خالص بدون ایجاد ارور در تیلویند */
+html, body {
+  background-color: #050B14 !important;
+  color: #cbd5e1 !important;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
