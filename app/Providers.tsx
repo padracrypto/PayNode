@@ -6,7 +6,8 @@ import {
   darkTheme,
   getDefaultConfig,
 } from '@rainbow-me/rainbowkit';
-import '@rainbow-me/rainbowkit/styles.css';
+// مسیر ایمپورت CSS برای رفع خطای بیلد اصلاح شد
+import '@rainbow-me/rainbowkit/dist/index.css';
 import { WagmiProvider } from 'wagmi';
 import { QueryClientProvider, QueryClient } from '@tanstack/react-query';
 import { type Chain } from 'viem';
@@ -27,6 +28,7 @@ const arcTestnet = {
 // 2. Configure Wagmi and RainbowKit
 const config = getDefaultConfig({
   appName: 'PayNode Escrow',
+  // هشدار: این شناسه باید حتماً تغییر کند
   projectId: 'YOUR_WALLETCONNECT_PROJECT_ID', 
   chains: [arcTestnet as unknown as Chain],
   ssr: true, 
