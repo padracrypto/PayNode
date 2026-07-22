@@ -1,14 +1,14 @@
 'use client';
 
-import { useState, use, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useParams } from 'next/navigation';
 import { useAccount, useSendTransaction, useWaitForTransactionReceipt } from 'wagmi';
 import { parseEther } from 'viem';
 import { supabase } from '@/app/lib/supabase';
 
-export default function SendTipPage({ params }: { params: Promise<{ username: string }> }) {
-  const { username } = use(params);
+export default function SendTipPage() {
+  const { username } = useParams();
   const router = useRouter();
   
   const { address: senderAddress, isConnected } = useAccount();
