@@ -1,11 +1,10 @@
-<<<<<<< HEAD
 'use client';
 
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAccount } from 'wagmi';
-import { supabase } from './lib/supabase';
+import { supabase } from '../lib/supabase';
 
 export default function HomePage() {
   const router = useRouter();
@@ -76,14 +75,10 @@ export default function HomePage() {
               </defs>
               
               <circle cx="28" cy="50" r="16" stroke="url(#paynode-grad)" strokeWidth="7" filter="url(#glow)"/>
-              
               <circle cx="72" cy="50" r="16" stroke="url(#paynode-grad)" strokeWidth="7" filter="url(#glow)"/>
-              
               <path d="M44 50h12" stroke="url(#paynode-grad)" strokeWidth="7" strokeLinecap="round" filter="url(#glow)"/>
-              
               <circle cx="50" cy="50" r="4.5" fill="#34D399" className="animate-pulse" />
             </svg>
-
             <div className="absolute inset-0 rounded-[2rem] bg-gradient-to-tr from-blue-500/5 to-purple-500/5 pointer-events-none"></div>
           </div>
         </div>
@@ -171,24 +166,6 @@ export default function HomePage() {
         </div>
       </section>
 
-=======
-import { ConnectButton } from '@rainbow-me/rainbowkit';
-
-export default function Home() {
-  return (
-    <div className="min-h-screen bg-slate-900 text-white flex flex-col items-center justify-center p-4">
-      <h1 className="text-6xl font-extrabold mb-4 tracking-tight">PayNode</h1>
-      <p className="text-xl text-slate-300 mb-10">
-        One Link. Get Tipped. Get Paid Securely.
-      </p>
-      
-      <ConnectButton />
-      
-      <div className="mt-16 text-center text-slate-400 text-sm space-y-2">
-        <p className="font-bold text-slate-300">How it Works</p>
-        <p>1️⃣ Create Profile | 2️⃣ Share Your Link | 3️⃣ Get Paid Securely</p>
-      </div>
->>>>>>> 0c8861c1432ec02fbefa50456b56404b620b9408
     </div>
   );
 }

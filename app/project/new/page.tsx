@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 'use client';
 
 import { useState, useEffect, Suspense } from 'react';
@@ -7,10 +6,8 @@ import { useAccount, useWriteContract, useWaitForTransactionReceipt, useReadCont
 import { parseUnits } from 'viem';
 import { supabase } from '../../lib/supabase'; 
 
-//  
 const ESCROW_CONTRACT_ADDRESS = '0x66B1fC10D5Ab5846EFdd632E331dBd4EB2B43a39';
 
-// ABI
 const ESCROW_ABI = [
   {
     "inputs": [{"internalType": "uint256","name": "_projectId","type": "uint256"}],
@@ -60,19 +57,16 @@ function ProjectForm() {
   const [localError, setLocalError] = useState('');
   const [isSyncing, setIsSyncing] = useState(false);
 
-  // Wagmi Hooks for Write and Confirmation
   const { data: hash, error: writeError, isPending, writeContract } = useWriteContract();
   const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({ hash });
 
-  // Wagmi Hook to Read Current Project Counter from Contract
   const { refetch: fetchProjectCounter } = useReadContract({
     address: ESCROW_CONTRACT_ADDRESS,
     abi: ESCROW_ABI,
     functionName: 'projectCounter',
-    query: { enabled: false } // We manually trigger this after creation
+    query: { enabled: false }
   });
 
-  // 
   const todayObj = new Date();
   const today = new Date(todayObj.getTime() - (todayObj.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
 
@@ -85,16 +79,9 @@ function ProjectForm() {
   const handlePostConfirmation = async () => {
     try {
       setIsSyncing(true);
-      
-      // 
       const { data: counterData } = await fetchProjectCounter();
-      
-      //
-      // 
       const newProjectId = counterData ? Number(counterData) - 1 : null;
-      
       await syncToDatabase(newProjectId);
-
     } catch (err: any) {
       setLocalError("Failed to fetch project ID from blockchain. " + (err.message || ''));
       setIsSyncing(false);
@@ -120,10 +107,8 @@ function ProjectForm() {
       return;
     }
 
-    // 
     const deadlineDate = new Date(formData.deadline);
     const todayDate = new Date();
-    // ریست کردن ساعت‌ها به نیمه‌شب محلی برای محاسبه دقیق اختلاف روز
     todayDate.setHours(0, 0, 0, 0);
     deadlineDate.setHours(0, 0, 0, 0);
     
@@ -161,7 +146,7 @@ function ProjectForm() {
             client: address,  
             status: 'AwaitingFunds',
             tx_hash: hash,
-            blockchain_id: blockchainId // 
+            blockchain_id: blockchainId
           }
         ])
         .select()
@@ -341,98 +326,4 @@ export default function NewProjectPage() {
       </Suspense>
     </div>
   );
-=======
-'use client';
-
-import { useState } from 'react';
-import { supabase } from '../../../lib/supabase';
-
-export default function StartProject() {
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState(''); // ✨ این خط برای توضیحات اضافه شد
-  const [budget, setBudget] = useState('');
-  const [statusMsg, setStatusMsg] = useState('');
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setStatusMsg('⏳ Saving to database...');
-
-    // ✨ حالا توضیحات رو هم همراه با بقیه اطلاعات می‌فرستیم به دیتابیس
-    const { error } = await supabase
-      .from('projects')
-      .insert([
-        { 
-          title: title, 
-          description: description, 
-          budget: parseFloat(budget) 
-        }
-      ]);
-
-    if (error) {
-      setStatusMsg('❌ Error: ' + error.message);
-    } else {
-      setStatusMsg('✅ Project successfully created!');
-      setTitle(''); 
-      setDescription(''); // خالی کردن توضیحات بعد از موفقیت
-      setBudget('');
-    }
-  };
-
-  return (
-    <div className="min-h-screen bg-slate-900 text-white p-6 flex flex-col items-center py-12">
-      <div className="max-w-xl w-full bg-slate-800 rounded-2xl p-8 shadow-2xl border border-slate-700">
-        <h2 className="text-3xl font-bold mb-2">Start a New Project</h2>
-        <p className="text-slate-400 mb-8 text-sm">Fill out the details below.</p>
-        
-        <form onSubmit={handleSubmit} className="space-y-5">
-          <div>
-            <label className="block text-sm text-slate-300 mb-1">Project Title</label>
-            <input 
-              type="text" 
-              required
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              className="w-full bg-slate-900 border border-slate-600 rounded-lg p-3 text-white" 
-            />
-          </div>
-
-          {/* ✨ این بخش برای باکس توضیحات به فرم اضافه شد */}
-          <div>
-            <label className="block text-sm text-slate-300 mb-1">Project Description</label>
-            <textarea 
-              required
-              rows={3}
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              className="w-full bg-slate-900 border border-slate-600 rounded-lg p-3 text-white" 
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm text-slate-300 mb-1">Budget (USDC)</label>
-            <input 
-              type="number" 
-              required
-              min="0" 
-              step="any"
-              value={budget}
-              onChange={(e) => setBudget(e.target.value)}
-              className="w-full bg-slate-900 border border-slate-600 rounded-lg p-3 text-white" 
-            />
-          </div>
-          
-          <button type="submit" className="w-full mt-4 py-4 rounded-xl bg-green-500 text-slate-900 font-bold text-lg hover:bg-green-400 transition-all">
-            Create Project
-          </button>
-
-          {statusMsg && (
-            <p className="text-center mt-4 text-sm font-medium text-slate-300">
-              {statusMsg}
-            </p>
-          )}
-        </form>
-      </div>
-    </div>
-  );
->>>>>>> 0c8861c1432ec02fbefa50456b56404b620b9408
 }
