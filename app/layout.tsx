@@ -1,4 +1,5 @@
 import './globals.css';
+<<<<<<< HEAD
 import Link from 'next/link';
 import { Providers } from './Providers';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
@@ -77,6 +78,20 @@ export default function RootLayout({
 
         </Providers>
 
+=======
+import { Providers } from './Providers';
+
+export const metadata = {
+  title: 'PayNode',
+  description: 'One Link. Get Paid Securely.',
+};
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="en">
+      <body>
+        <Providers>{children}</Providers>
+>>>>>>> 0c8861c1432ec02fbefa50456b56404b620b9408
       </body>
     </html>
   );

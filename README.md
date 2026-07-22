@@ -1,39 +1,38 @@
-# PayNode: Decentralized Escrow & Payment Gateway on ARC
+# PayNode - Decentralized Escrow & Milestone Platform
 
-## 🚀 Overview
-PayNode is a trustless, decentralized escrow platform and freelance payment hub built specifically for the **ARC ecosystem**. It bridges the gap between clients and builders by ensuring secure, milestone-based payments using USDC on the ARC Testnet. 
+PayNode is a next-generation peer-to-peer escrow platform built for the **Build on Arc** developer program. It provides secure, transparent, and trustless transactions for developers, clients, and freelancers leveraging the high-speed and low-cost capabilities of the Arc network.
 
-By leveraging smart contracts, PayNode eliminates payment anxiety: funds are locked securely upon project initiation and only released when both parties agree the work has been delivered.
+---
 
-## 🌟 Key Features
-- **Decentralized Escrow:** Funds are securely locked in a smart contract, ensuring clients have the funds and builders get paid upon completion.
-- **USDC Integration:** Seamless payments using standard ARC Testnet USDC.
-- **Real-Time State Sync:** Instant UI updates tied to on-chain events via Supabase.
-- **Role-Based Execution:** Only authorized wallets (Client/Freelancer) can trigger state changes (Deliver, Release).
+## 🚀 Key Features
+
+* **Smart Contract Escrow:** Fully transparent smart contracts deployed and verified on Arc Testnet, ensuring funds are safely locked until milestone completion.
+* **Smart User Routing:** Intelligent client-side navigation that seamlessly directs users to their onboarding flows or personalized dashboards based on Supabase database profiles.
+* **Real-Time Notifications:** Instant notification system powered by Supabase real-time channels to keep users updated on transaction statuses and milestone approvals.
+* **Web3 Integration:** Native wallet connection using Wagmi and RainbowKit tailored for the Arc network ecosystem.
+* **Modern UI/UX:** Built with Next.js App Router and Tailwind CSS, offering a sleek, minimalist, and professional dark-mode Web3 interface.
+
+---
+
+## 📋 Smart Contract Details
+
+* **Network:** Arc Testnet
+* **Contract Address:** `0x66B1fC10D5Ab5846EFdd632E331dBd4EB2B43a39`
+* **Status:** Verified on ArcScan (v0.8.24)
+
+---
 
 ## 🛠️ Tech Stack
-- **Frontend:** Next.js, React, TailwindCSS
-- **Web3 Integration:** Ethers.js
-- **Database:** Supabase (PostgreSQL)
-- **Smart Contracts:** Solidity (Deployed and Verified on ARC Testnet)
 
-## 🔗 Smart Contract (ARC Testnet)
-Our core escrow logic is deployed and fully verified on the ARC Testnet Explorer:
-- **PayNode Escrow Contract:** 0x835393bCaa40d1e8B8D585567D17E38FdF8ABAc8
-- **USDC Testnet Token:** 0x3600000000000000000000000000000000000000
+* **Frontend:** Next.js (App Router), React, Tailwind CSS
+* **Web3 / Blockchain:** Solidity, Wagmi, RainbowKit, Viem
+* **Backend & Database:** Supabase (PostgreSQL, Real-time subscriptions)
+* **Deployment:** Vercel
 
-## 💻 Escrow Lifecycle (How it works)
-1. **Fund (Client):** The client inputs the freelancer's wallet address and pays the project budget in USDC. Funds are locked in the `PayNodeEscrow` contract.
-2. **Deliver (Freelancer):** The assigned freelancer completes the work and triggers the "Deliver Work" function on-chain.
-3. **Release (Client):** The client reviews the work and triggers the "Release Payment" function, which automatically transfers the USDC to the freelancer's wallet.
+---
 
-## 🚀 Running Locally
-To run the PayNode interface locally:
+## ⚙️ Getting Started Locally
 
-1. Clone the repository.
-2. Install dependencies:
-   npm install
-3. Set up your .env.local with your Supabase credentials.
-4. Run the development server:
-   npm run dev
-5. Open http://localhost:3000 and ensure your MetaMask is connected to the ARC Testnet.
+1. Clone the repository:
+   ```bash
+   git clone [https://github.com/YOUR_USERNAME/YOUR_NEW_REPO_NAME.git](https://github.com/YOUR_USERNAME/YOUR_NEW_REPO_NAME.git)

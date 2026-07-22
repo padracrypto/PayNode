@@ -6,30 +6,24 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "next lint"
   },
   "dependencies": {
-    "@rainbow-me/rainbowkit": "^2.2.11",
-    "@supabase/supabase-js": "^2.110.7",
-    "@tanstack/react-query": "^5.101.2",
-    "@x402/core": "^2.18.0",
-    "@x402/evm": "^2.18.0",
-    "@x402/svm": "^2.18.0",
-    "ethers": "^6.17.0",
-    "next": "16.2.10",
-    "react": "19.2.4",
-    "react-dom": "19.2.4",
-    "viem": "^2.55.4",
-    "wagmi": "^2.19.5"
+    "@supabase/supabase-js": "^2.39.0",
+    "@rainbow-me/rainbowkit": "^2.0.0",
+    "@tanstack/react-query": "^5.0.0",
+    "next": "14.2.0",
+    "react": "^18",
+    "react-dom": "^18",
+    "viem": "^2.0.0",
+    "wagmi": "^2.0.0"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "eslint": "^9",
-    "eslint-config-next": "16.2.10",
-    "tailwindcss": "^4",
+    "@types/react": "^20",
+    "@types/react-dom": "^20",
+    "postcss": "^8",
+    "tailwindcss": "^3.4.0",
     "typescript": "^5"
   }
 }
