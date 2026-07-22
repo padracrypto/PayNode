@@ -1,5 +1,9 @@
 # PayNode - Decentralized Escrow & Milestone Platform
 
+🚀 **Live Platform:** [paynode.online](https://paynode.online)
+
+PayNode is a next-generation peer-to-peer escrow platform built for the **Build on Arc** developer program. It provides secure, transparent, and trustless transactions for developers, clients, and freelancers leveraging the high-speed and low-cost capabilities of the Arc network.
+
 PayNode is a next-generation peer-to-peer escrow platform built for the **Build on Arc** developer program. It provides secure, transparent, and trustless transactions for developers, clients, and freelancers leveraging the high-speed and low-cost capabilities of the Arc network.
 
 ---
