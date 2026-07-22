@@ -35,4 +35,4 @@ PayNode is a next-generation peer-to-peer escrow platform built for the **Build 
 
 1. Clone the repository:
    ```bash
-   git clone [https://github.com/YOUR_USERNAME/YOUR_NEW_REPO_NAME.git](https://github.com/YOUR_USERNAME/YOUR_NEW_REPO_NAME.git)
+   git clone [https://github.com/YOUR_USERNAME/YOUR_NEW_REPO_NAME.git](https://github.com/padracrypto/PayNode.git)
