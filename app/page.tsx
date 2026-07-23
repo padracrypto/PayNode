@@ -52,8 +52,8 @@ export default function HomePage() {
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
             <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]"></span>
           </div>
-          <span className="text-slate-400 text-xs font-bold tracking-widest uppercase">
-            Built on <span className="text-white">ARC</span>
+          <span className="text-slate-400 text-xs font-bold tracking-widest">
+            Built on <span className="text-white">Arc</span>
           </span>
         </div>
       </div>
@@ -145,9 +145,9 @@ export default function HomePage() {
                 <path strokeLinecap="round" strokeLinejoin="round" d="m3.75 13.5 10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75Z" />
               </svg>
             </div>
-            <h3 className="text-xl font-bold text-white mb-3">Powered by ARC</h3>
+            <h3 className="text-xl font-bold text-white mb-3">Powered by Arc Network</h3>
             <p className="text-slate-400 text-sm leading-relaxed">
-              Experience lightning-fast transactions and minimal gas fees utilizing the robust ARC network infrastructure.
+              Experience lightning-fast transactions and minimal gas fees utilizing the robust Arc infrastructure.
             </p>
           </div>
 
