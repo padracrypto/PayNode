@@ -157,8 +157,6 @@ export default function ProjectPage() {
   const [project, setProject] = useState<any>(null);
   const [clientUsername, setClientUsername] = useState<string>('');
   const [builderUsername, setBuilderUsername] = useState<string>('');
-  
-  const [connectedWallet, setConnectedWallet] = useState<string>('');
 
   const [deliveryData, setDeliveryData] = useState({ notes: '', links: '' });
   const [isRevisionMode, setIsRevisionMode] = useState(false);
@@ -176,19 +174,12 @@ export default function ProjectPage() {
   const { isSuccess: isConfirmed } = useWaitForTransactionReceipt({ hash });
 
   useEffect(() => {
-    if (address) {
-      setConnectedWallet(address);
-    }
-  }, [address]);
-
-  useEffect(() => {
     fetchProject();
   }, [id]);
 
-  const isClient = project?.client && connectedWallet.toLowerCase() === project.client.toLowerCase();
-  const isBuilder = project?.builder && connectedWallet.toLowerCase() === project.builder.toLowerCase();
-  
-  const isUnauthorized = !isClient && !isBuilder && connectedWallet !== '';
+  const isClient = project?.client && address?.toLowerCase() === project.client.toLowerCase();
+  const isBuilder = project?.builder && address?.toLowerCase() === project.builder.toLowerCase();
+  const isUnauthorized = !isClient && !isBuilder && !!address;
 
   useEffect(() => {
     if (!project?.deadline) return;
@@ -449,11 +440,6 @@ export default function ProjectPage() {
             Return to Dashboard
           </Link>
         </div>
-        
-        <div className="mt-8 flex gap-2">
-           <button onClick={() => setConnectedWallet(project?.client)} className="text-xs text-slate-600 hover:text-slate-400">Force Client</button>
-           <button onClick={() => setConnectedWallet(project?.builder)} className="text-xs text-slate-600 hover:text-slate-400">Force Builder</button>
-        </div>
       </div>
     );
   }
@@ -517,37 +503,6 @@ export default function ProjectPage() {
           </div>
         </div>
       )}
-
-      <div className="bg-[#0f172a]/80 border border-slate-800 rounded-2xl p-4 flex flex-col md:flex-row items-center justify-between gap-4 backdrop-blur-md shadow-lg">
-        <div className="flex items-center gap-3">
-          <div className="relative flex items-center justify-center">
-            <span className="absolute w-3 h-3 bg-emerald-500 rounded-full animate-ping opacity-75"></span>
-            <span className="relative w-2 h-2 bg-emerald-500 rounded-full"></span>
-          </div>
-          <span className="text-sm font-bold text-slate-300">Wallet Simulator</span>
-        </div>
-        
-        <div className="flex flex-wrap bg-[#050B14] border border-slate-800 rounded-xl p-1 gap-1">
-          <button 
-            onClick={() => setConnectedWallet(project?.client)}
-            className={`px-6 py-2 rounded-lg text-xs font-bold transition-all ${isClient ? 'bg-blue-600 text-white shadow-[0_0_15px_rgba(37,99,235,0.3)]' : 'text-slate-500 hover:text-slate-300'}`}
-          >
-            Client ({clientUsername ? `@${clientUsername}` : project?.client?.substring(0, 4)})
-          </button>
-          <button 
-            onClick={() => setConnectedWallet(project?.builder)}
-            className={`px-6 py-2 rounded-lg text-xs font-bold transition-all ${isBuilder ? 'bg-purple-600 text-white shadow-[0_0_15px_rgba(168,85,247,0.3)]' : 'text-slate-500 hover:text-slate-300'}`}
-          >
-            Builder (@{builderUsername || project?.builder})
-          </button>
-          <button 
-            onClick={() => setConnectedWallet('0xRandomUnauthorizedWallet')}
-            className="px-6 py-2 rounded-lg text-xs font-bold transition-all text-slate-500 hover:text-slate-300 border border-dashed border-slate-700 ml-2"
-          >
-            Test Unauthorized Access
-          </button>
-        </div>
-      </div>
 
       <div className="bg-[#0f172a]/60 border border-slate-800 rounded-[2rem] p-8 md:p-10 relative overflow-hidden shadow-2xl">
         

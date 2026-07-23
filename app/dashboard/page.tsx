@@ -38,6 +38,7 @@ export default function DashboardPage() {
   const [recentTips, setRecentTips] = useState<Tip[]>([]);
   
   const [showAllPast, setShowAllPast] = useState(false);
+  const [showAllTips, setShowAllTips] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -108,7 +109,7 @@ export default function DashboardPage() {
 
         const sum = userTips.reduce((acc, tip) => acc + Number(tip.amount || 0), 0);
         setTotalTips(sum);
-        setRecentTips(userTips.slice(0, 5));
+        setRecentTips(userTips);
       }
 
     } catch (err: any) {
@@ -128,6 +129,8 @@ export default function DashboardPage() {
   const pastProjects = projects.filter(p => !activeStatuses.includes(p.status));
   
   const visiblePastProjects = showAllPast ? pastProjects : pastProjects.slice(0, 3);
+  const visibleTips = showAllTips ? recentTips : recentTips.slice(0, 3);
+  
   const activeContractsCount = activeProjects.length;
   const totalLockedAmount = activeProjects.reduce((sum, p) => sum + Number(p.budget || 0), 0);
 
@@ -297,7 +300,7 @@ export default function DashboardPage() {
               <p className="text-slate-500 text-sm text-center">Loading tips...</p>
             ) : recentTips.length > 0 ? (
               <div className="space-y-4">
-                {recentTips.map((tip) => (
+                {visibleTips.map((tip) => (
                   <div key={tip.id} className="bg-[#050B14]/80 border border-slate-800/80 rounded-2xl p-4 hover:border-slate-700 transition-colors">
                     <div className="flex justify-between items-center mb-2">
                       <span className="text-xs font-mono text-slate-400" title={tip.sender_wallet}>
@@ -317,6 +320,17 @@ export default function DashboardPage() {
                     </div>
                   </div>
                 ))}
+                
+                {recentTips.length > 3 && (
+                  <div className="text-center pt-4 border-t border-slate-800/50 mt-2">
+                    <button 
+                      onClick={() => setShowAllTips(!showAllTips)}
+                      className="w-full px-6 py-2.5 rounded-xl border border-slate-700 text-slate-400 hover:text-white hover:bg-slate-800 transition-all text-sm font-bold"
+                    >
+                      {showAllTips ? 'Show Less' : `View All Tips (${recentTips.length})`}
+                    </button>
+                  </div>
+                )}
               </div>
             ) : (
               <p className="text-slate-500 text-sm text-center py-4">No tips received yet.</p>
