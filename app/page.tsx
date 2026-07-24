@@ -116,7 +116,9 @@ export default function HomePage() {
           </button>
           
           <Link 
-            href="#features" 
+            href="https://docs.paynode.online" 
+            target="_blank"
+            rel="noopener noreferrer"
             className="px-12 py-4 rounded-2xl bg-[#0f172a] hover:bg-slate-800 border border-slate-700 text-white font-bold text-lg transition-all flex items-center justify-center hover:scale-105 active:scale-95"
           >
             How it works
