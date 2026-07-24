@@ -304,8 +304,12 @@ export default function DocsPage() {
       <header className="sticky top-0 z-50 border-b border-slate-800/80 bg-[#090d16]/85 backdrop-blur-xl">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-5 md:px-8">
           <a href="#overview" className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 text-sm font-black text-white shadow-lg shadow-blue-500/20">
-              P
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] border border-slate-700/50 bg-slate-800/40 shadow-inner">
+              <div className="flex items-center">
+                <div className="h-[14px] w-[14px] rounded-full border-[2.5px] border-blue-400 shadow-[0_0_8px_rgba(96,165,250,0.6)]"></div>
+                <div className="z-10 -mx-[3px] h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.9)]"></div>
+                <div className="h-[14px] w-[14px] rounded-full border-[2.5px] border-violet-500 shadow-[0_0_8px_rgba(139,92,246,0.6)]"></div>
+              </div>
             </div>
 
             <div className="flex items-center gap-2">
