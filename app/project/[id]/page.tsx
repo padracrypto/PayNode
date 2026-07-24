@@ -315,8 +315,7 @@ export default function ProjectPage() {
       abi: ESCROW_ABI,
       functionName: 'fundProject',
       args: [BigInt(project.blockchain_id)], 
-      // Fixed: Arc network native token decimals (6)
-      value: parseUnits(project.budget.toString(), 6) 
+      value: parseUnits(project.budget.toString(), 18) 
     });
   };
 
@@ -649,19 +648,19 @@ export default function ProjectPage() {
             </div>
           )}
 
-          {project.status === 'Delivered' && (
-            <div className="bg-[#050B14] border border-purple-900/30 p-6 md:p-8 rounded-3xl">
-              <h2 className="text-xl font-bold text-purple-400 mb-6 flex items-center gap-2">
+          {(project.status === 'Delivered' || project.status === 'Completed') && (
+            <div className={`bg-[#050B14] border ${project.status === 'Completed' ? 'border-emerald-900/30' : 'border-purple-900/30'} p-6 md:p-8 rounded-3xl`}>
+              <h2 className={`text-xl font-bold ${project.status === 'Completed' ? 'text-emerald-400' : 'text-purple-400'} mb-6 flex items-center gap-2`}>
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5"><path fillRule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm3.857-9.809a.75.75 0 0 0-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 1 0-1.06 1.061l2.5 2.5a.75.75 0 0 0 1.137-.089l4-5.5Z" clipRule="evenodd" /></svg>
-                Work Delivered for Review
+                {project.status === 'Completed' ? 'Delivered Work (Approved)' : 'Work Delivered for Review'}
               </h2>
               
               <div className="bg-[#0f172a] p-5 rounded-2xl border border-slate-800/80 mb-6 text-sm text-slate-300">
                 <p className="mb-4"><strong className="text-slate-500 uppercase text-xs tracking-wider block mb-1">Notes:</strong>{project.delivery_notes}</p>
-                <p><strong className="text-slate-500 uppercase text-xs tracking-wider block mb-1">Link:</strong><a href={project.delivery_links} target="_blank" className="text-blue-400 hover:text-blue-300 hover:underline">{project.delivery_links}</a></p>
+                <p><strong className="text-slate-500 uppercase text-xs tracking-wider block mb-1">Link:</strong><a href={project.delivery_links} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 hover:underline break-all">{project.delivery_links}</a></p>
               </div>
               
-              {isClient && !isRevisionMode && (
+              {project.status === 'Delivered' && isClient && !isRevisionMode && (
                  <div className="flex flex-col sm:flex-row gap-4 mt-6 border-t border-slate-800 pt-6">
                    <button 
                      onClick={() => setShowRatingModal(true)} 
@@ -676,7 +675,7 @@ export default function ProjectPage() {
                  </div>
               )}
               
-              {isClient && isRevisionMode && (
+              {project.status === 'Delivered' && isClient && isRevisionMode && (
                  <div className="mt-6 border-t border-slate-800 pt-6">
                    <textarea 
                      className="w-full bg-[#0f172a] p-4 rounded-xl border border-orange-900/30 text-white text-sm mb-4 outline-none focus:border-orange-500/50 transition-all resize-none" 
@@ -693,7 +692,7 @@ export default function ProjectPage() {
                  </div>
               )}
 
-              {isBuilder && (
+              {project.status === 'Delivered' && isBuilder && (
                 <div className="mt-6 pt-6 border-t border-slate-800/80 text-center">
                   <p className="text-slate-400 mb-4 text-sm">Waiting for the client to review the work...</p>
                   <button onClick={() => setShowRatingModal(true)} disabled={!isForceReleaseAvailable || loading} className={`w-full py-3 rounded-xl font-bold transition-all text-sm ${isForceReleaseAvailable ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-[0_0_15px_rgba(16,185,129,0.3)]' : 'bg-[#0f172a] border border-slate-800 text-slate-600 cursor-not-allowed'}`}>
