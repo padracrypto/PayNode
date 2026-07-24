@@ -3,7 +3,7 @@
 import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAccount, useWriteContract, useWaitForTransactionReceipt, usePublicClient } from 'wagmi';
-import { parseUnits } from 'viem';
+import { parseUnits, decodeEventLog } from 'viem';
 import { supabase } from '../../lib/supabase'; 
 
 const ESCROW_CONTRACT_ADDRESS = '0x66B1fC10D5Ab5846EFdd632E331dBd4EB2B43a39';
@@ -27,6 +27,19 @@ const ESCROW_ABI = [
     "outputs": [{"internalType": "uint256","name": "","type": "uint256"}],
     "stateMutability": "nonpayable",
     "type": "function"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {"indexed": true, "internalType": "uint256", "name": "projectId", "type": "uint256"},
+      {"indexed": true, "internalType": "address", "name": "client", "type": "address"},
+      {"indexed": true, "internalType": "address", "name": "builder", "type": "address"},
+      {"indexed": false, "internalType": "uint256", "name": "amount", "type": "uint256"},
+      {"indexed": false, "internalType": "uint256", "name": "deadline", "type": "uint256"},
+      {"indexed": false, "internalType": "uint8", "name": "maxRevisions", "type": "uint8"}
+    ],
+    "name": "ProjectCreated",
+    "type": "event"
   },
   {
     "inputs": [],
@@ -76,15 +89,34 @@ function ProjectForm() {
       
       if (!publicClient) throw new Error("Blockchain client not initialized.");
 
-      // Fetch fresh counter directly from the RPC node to ensure 100% accuracy
-      const counterData = await publicClient.readContract({
-        address: ESCROW_CONTRACT_ADDRESS,
-        abi: ESCROW_ABI,
-        functionName: 'projectCounter'
-      });
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
       
-      const newProjectId = counterData !== undefined ? Number(counterData) - 1 : null;
-      await syncToDatabase(newProjectId);
+      let blockchainId: number | null = null;
+      for (const log of receipt.logs) {
+        try {
+          const decoded = decodeEventLog({
+            abi: ESCROW_ABI,
+            data: log.data,
+            topics: log.topics,
+          });
+          if (decoded.eventName === 'ProjectCreated') {
+            blockchainId = Number((decoded.args as any).projectId);
+            break;
+          }
+        } catch (e) {
+        }
+      }
+
+      if (blockchainId === null) {
+        const counterData = await publicClient.readContract({
+          address: ESCROW_CONTRACT_ADDRESS,
+          abi: ESCROW_ABI,
+          functionName: 'projectCounter'
+        });
+        blockchainId = counterData !== undefined ? Number(counterData) - 1 : null;
+      }
+      
+      await syncToDatabase(blockchainId);
     } catch (err: any) {
       setLocalError("Failed to fetch project ID from blockchain. " + (err.message || ''));
       setIsSyncing(false);
@@ -124,7 +156,7 @@ function ProjectForm() {
         functionName: 'createProject',
         args: [
           formData.builderWallet as `0x${string}`,
-          parseUnits(formData.budget, 18), // Fixed: Arc native token always uses 18 decimals
+          parseUnits(formData.budget, 18),
           BigInt(durationDays),
           Number(formData.maxRevisions)
         ],
