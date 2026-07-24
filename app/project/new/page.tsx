@@ -72,7 +72,10 @@ function ProjectForm() {
   const [isSyncing, setIsSyncing] = useState(false);
 
   const { data: hash, error: writeError, isPending, writeContract } = useWriteContract();
-  const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({ hash });
+  const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({ 
+    hash: hash as `0x${string}`,
+    query: { enabled: !!hash }
+  });
 
   const todayObj = new Date();
   const today = new Date(todayObj.getTime() - (todayObj.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
@@ -89,7 +92,7 @@ function ProjectForm() {
       
       if (!publicClient) throw new Error("Blockchain client not initialized.");
 
-      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      const receipt = await publicClient.waitForTransactionReceipt({ hash: hash as `0x${string}` });
       
       let blockchainId: number | null = null;
       for (const log of receipt.logs) {
