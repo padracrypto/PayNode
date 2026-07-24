@@ -2,7 +2,7 @@
 
 import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useAccount, useWriteContract, useWaitForTransactionReceipt, useReadContract } from 'wagmi';
+import { useAccount, useWriteContract, useWaitForTransactionReceipt, usePublicClient } from 'wagmi';
 import { parseUnits } from 'viem';
 import { supabase } from '../../lib/supabase'; 
 
@@ -43,6 +43,7 @@ function ProjectForm() {
   const builderParam = searchParams.get('builder') || '';
   
   const { address, isConnected } = useAccount();
+  const publicClient = usePublicClient();
 
   const [formData, setFormData] = useState({
     title: '',
@@ -60,13 +61,6 @@ function ProjectForm() {
   const { data: hash, error: writeError, isPending, writeContract } = useWriteContract();
   const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({ hash });
 
-  const { refetch: fetchProjectCounter } = useReadContract({
-    address: ESCROW_CONTRACT_ADDRESS,
-    abi: ESCROW_ABI,
-    functionName: 'projectCounter',
-    query: { enabled: false }
-  });
-
   const todayObj = new Date();
   const today = new Date(todayObj.getTime() - (todayObj.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
 
@@ -79,8 +73,17 @@ function ProjectForm() {
   const handlePostConfirmation = async () => {
     try {
       setIsSyncing(true);
-      const { data: counterData } = await fetchProjectCounter();
-      const newProjectId = counterData ? Number(counterData) - 1 : null;
+      
+      if (!publicClient) throw new Error("Blockchain client not initialized.");
+
+      // Fetch fresh counter directly from the RPC node to ensure 100% accuracy
+      const counterData = await publicClient.readContract({
+        address: ESCROW_CONTRACT_ADDRESS,
+        abi: ESCROW_ABI,
+        functionName: 'projectCounter'
+      });
+      
+      const newProjectId = counterData !== undefined ? Number(counterData) - 1 : null;
       await syncToDatabase(newProjectId);
     } catch (err: any) {
       setLocalError("Failed to fetch project ID from blockchain. " + (err.message || ''));
@@ -121,7 +124,7 @@ function ProjectForm() {
         functionName: 'createProject',
         args: [
           formData.builderWallet as `0x${string}`,
-          parseUnits(formData.budget, 18), 
+          parseUnits(formData.budget, 6), // Fixed: USDC always uses 6 decimals on Arc
           BigInt(durationDays),
           Number(formData.maxRevisions)
         ],

@@ -3,13 +3,14 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAccount } from 'wagmi';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../lib/supabase'; // Ensure this path is correct
 
 export default function CreateProfilePage() {
   const router = useRouter();
   const { address, isConnected } = useAccount();
   const [loading, setLoading] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [error, setError] = useState('');
 
   // Profile State
   const [username, setUsername] = useState('');
@@ -30,36 +31,54 @@ export default function CreateProfilePage() {
   }, [isConnected, address]);
 
   const fetchExistingProfile = async (userWallet: string) => {
-    // اصلاح نام ستون‌ها بر اساس دیتابیس شما
-    const { data } = await supabase
-      .from('profiles')
-      .select('username, "about me", skills, github, x, linkedin, website')
-      .eq('wallet_address', userWallet)
-      .single();
+    try {
+      // Ensure column names exactly match your Supabase schema
+      const { data, error: fetchError } = await supabase
+        .from('profiles')
+        .select('username, "about me", skills, github, x, linkedin, website')
+        .eq('wallet_address', userWallet)
+        .single();
 
-    if (data) {
-      setUsername(data.username || '');
-      setAboutMe(data['about me'] || ''); 
-      setSkills(Array.isArray(data.skills) ? data.skills.join(', ') : data.skills || '');
-      setSocials({
-        github: data.github || '',
-        x: data.x || '', // اصلاح نام ستون از twitter به x
-        linkedin: data.linkedin || '',
-        website: data.website || ''
-      });
+      if (fetchError && fetchError.code !== 'PGRST116') {
+        // Ignore "Row not found" errors, log others
+        console.error('Error fetching profile:', fetchError);
+        return;
+      }
+
+      if (data) {
+        setUsername(data.username || '');
+        setAboutMe(data['about me'] || ''); 
+        setSkills(Array.isArray(data.skills) ? data.skills.join(', ') : data.skills || '');
+        setSocials({
+          github: data.github || '',
+          x: data.x || '', 
+          linkedin: data.linkedin || '',
+          website: data.website || ''
+        });
+      }
+    } catch (err) {
+      console.error('Unexpected error fetching profile:', err);
     }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!address) return;
+    if (!address) {
+      setError('Wallet is not connected.');
+      return;
+    }
+    
     setLoading(true);
+    setError('');
 
     try {
-      const skillsArray = skills.split(',').map(s => s.trim());
+      // Clean up skills array to avoid empty strings like [""]
+      const skillsArray = skills
+        .split(',')
+        .map(s => s.trim())
+        .filter(s => s !== '');
 
-      // استفاده از نام دقیق ستون‌ها طبق تصویر
-      const { error } = await supabase
+      const { error: updateError } = await supabase
         .from('profiles')
         .update({
           "about me": aboutMe,
@@ -71,13 +90,14 @@ export default function CreateProfilePage() {
         })
         .eq('wallet_address', address);
 
-      if (error) throw error;
+      if (updateError) throw updateError;
 
-      // هدایت به صفحه پروفایل عمومی کاربر
+      // Redirect to user's public profile
       router.push(`/${username}`);
-    } catch (err) {
+      
+    } catch (err: any) {
       console.error('Save error:', err);
-      alert('Failed to save profile. Please check console for details.');
+      setError(err.message || 'Failed to save profile. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -92,6 +112,15 @@ export default function CreateProfilePage() {
           <h1 className="text-3xl font-black text-white tracking-tight mb-2">Complete Your Profile</h1>
           <p className="text-slate-400 text-sm">Add details to help clients find and collaborate with you.</p>
         </div>
+
+        {error && (
+          <div className="bg-red-900/20 border border-red-900/50 text-red-400 p-4 rounded-2xl mb-6 text-sm font-bold flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 flex-shrink-0">
+              <path fillRule="evenodd" d="M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0Zm-8-5a.75.75 0 0 1 .75.75v4.5a.75.75 0 0 1-1.5 0v-4.5A.75.75 0 0 1 10 5Zm0 10a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clipRule="evenodd" />
+            </svg>
+            <span>{error}</span>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="bg-[#0f172a]/60 border border-slate-800/80 rounded-[2rem] p-8 md:p-10 backdrop-blur-xl shadow-2xl">
           <div className="space-y-6">
@@ -109,8 +138,9 @@ export default function CreateProfilePage() {
                 <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Username</label>
                 <input 
                   type="text" 
-                  value={`@${username}`}
+                  value={username ? `@${username}` : ''}
                   disabled
+                  placeholder="Loading..."
                   className="w-full bg-[#050B14]/50 border border-slate-800/50 rounded-xl px-4 py-3 text-slate-500 font-bold text-sm cursor-not-allowed"
                 />
               </div>

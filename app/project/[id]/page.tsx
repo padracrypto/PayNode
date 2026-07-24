@@ -315,7 +315,8 @@ export default function ProjectPage() {
       abi: ESCROW_ABI,
       functionName: 'fundProject',
       args: [BigInt(project.blockchain_id)], 
-      value: parseUnits(project.budget.toString(), 18)
+      // Fixed: Ensure 6 decimals are used for USDC
+      value: parseUnits(project.budget.toString(), 6) 
     });
   };
 

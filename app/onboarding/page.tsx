@@ -38,27 +38,47 @@ export default function OnboardingPage() {
     setLoading(true);
     setError('');
 
-    if (formData.username.length < 3) {
+    const normalizedUsername = formData.username.toLowerCase().trim();
+
+    if (normalizedUsername.length < 3) {
       setError('Username must be at least 3 characters.');
       setLoading(false);
       return;
     }
 
     try {
+      // Step 1: Check if the username is already taken by another wallet
+      const { data: existingUser, error: checkError } = await supabase
+        .from('profiles')
+        .select('wallet_address')
+        .eq('username', normalizedUsername)
+        .maybeSingle();
+
+      if (checkError) {
+        throw new Error(checkError.message);
+      }
+
+      if (existingUser && existingUser.wallet_address !== address) {
+        setError('This username is already taken. Please choose another one.');
+        setLoading(false);
+        return;
+      }
+
+      // Step 2: Save the profile (using upsert to allow updates if the user is the owner)
       const { error: sbError } = await supabase
         .from('profiles')
-        .insert([
-          {
-            wallet_address: address, // Using the real connected wallet
-            username: formData.username.toLowerCase().trim(),
-            role: formData.role
-          }
-        ]);
+        .upsert(
+          [
+            {
+              wallet_address: address, // Using the real connected wallet
+              username: normalizedUsername,
+              role: formData.role
+            }
+          ],
+          { onConflict: 'wallet_address' }
+        );
 
       if (sbError) {
-        if (sbError.code === '23505') {
-          throw new Error('This username or wallet is already registered!');
-        }
         throw new Error(sbError.message);
       }
       
