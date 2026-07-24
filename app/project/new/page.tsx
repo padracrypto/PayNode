@@ -124,7 +124,7 @@ function ProjectForm() {
         functionName: 'createProject',
         args: [
           formData.builderWallet as `0x${string}`,
-          parseUnits(formData.budget, 18), // Fixed: Arc native token always uses 18 decimals
+          parseUnits(formData.budget, 6), // Fixed: Arc native token always uses 6 decimals
           BigInt(durationDays),
           Number(formData.maxRevisions)
         ],

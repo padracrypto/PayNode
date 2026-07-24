@@ -315,8 +315,8 @@ export default function ProjectPage() {
       abi: ESCROW_ABI,
       functionName: 'fundProject',
       args: [BigInt(project.blockchain_id)], 
-      // Fixed: Arc network native token decimals (18)
-      value: parseUnits(project.budget.toString(), 18) 
+      // Fixed: Arc network native token decimals (6)
+      value: parseUnits(project.budget.toString(), 6) 
     });
   };
 
