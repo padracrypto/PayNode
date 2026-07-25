@@ -2,237 +2,210 @@ import Image from "next/image";
 
 const navigation = [
   {
-    title: "Getting Started",
+    title: "Start Here",
     items: [
       { title: "Overview", href: "#overview" },
-      { title: "The Problem", href: "#problem" },
-      { title: "Core Features", href: "#features" },
+      { title: "What PayNode Solves", href: "#problem" },
+      { title: "Protecting Both Sides", href: "#protection" },
+      { title: "Escrow Rules", href: "#escrow-rules" },
+    ],
+  },
+  {
+    title: "Product",
+    items: [
+      { title: "Project Timeline", href: "#timeline" },
+      { title: "Builder Profile", href: "#builder-profile" },
+      { title: "Project Flow", href: "#project-flow" },
+      { title: "Reputation", href: "#reputation" },
+    ],
+  },
+  {
+    title: "Trust & Safety",
+    items: [
+      { title: "Security Rules", href: "#security" },
       { title: "Why Arc Network?", href: "#why-arc-network" },
+      { title: "FAQ", href: "#faq" },
     ],
   },
+];
+
+const escrowScenarios = [
   {
-    title: "Product Lifecycle",
-    items: [
-      { title: "1. Builder Profile", href: "#builder-profile" },
-      { title: "2. Create Project", href: "#create-project" },
-      { title: "3. Fund USDC Escrow", href: "#fund-escrow" },
-      { title: "4. Deliver Work", href: "#deliver-work" },
-      { title: "5. Release USDC", href: "#release-payment" },
-      { title: "6. Rating", href: "#rating" },
-    ],
+    number: "01",
+    badge: "Protects the Client",
+    badgeClass: "border-blue-500/25 bg-blue-500/10 text-blue-300",
+    title: "The project deadline passes with no delivery",
+    description:
+      "If the builder does not submit any work before the project deadline, the client becomes eligible to refund the locked payment from the smart contract.",
+    result: "Result: the client can recover the escrowed funds.",
   },
   {
-    title: "Technical",
-    items: [
-      { title: "Project States", href: "#project-states" },
-      { title: "Smart Contract", href: "#smart-contract" },
-      { title: "Architecture", href: "#architecture" },
-      { title: "Synchronization", href: "#synchronization" },
-      { title: "Security", href: "#security" },
-    ],
+    number: "02",
+    badge: "Protects the Builder",
+    badgeClass:
+      "border-emerald-500/25 bg-emerald-500/10 text-emerald-300",
+    title: "The client does not respond after delivery",
+    description:
+      "When the builder submits the work, a separate 7-day review period begins. During those 7 days, the client can approve, request a revision, or raise a dispute.",
+    result:
+      "Result: if the client takes no action before the review period ends, the builder becomes eligible to claim the escrowed USDC directly from the smart contract.",
   },
   {
-    title: "Resources",
-    items: [{ title: "FAQ", href: "#faq" }],
+    number: "03",
+    badge: "Protects Quality",
+    badgeClass:
+      "border-violet-500/25 bg-violet-500/10 text-violet-300",
+    title: "The client requests a revision",
+    description:
+      "A revision request closes the current review period. The payment remains securely locked while the builder works on the requested changes.",
+    result:
+      "Result: no payment is released while the project is in revision.",
+  },
+  {
+    number: "04",
+    badge: "Protects Both Sides",
+    badgeClass:
+      "border-amber-500/25 bg-amber-500/10 text-amber-300",
+    title: "The builder submits revised work",
+    description:
+      "After the builder submits the updated delivery, a new 7-day review period begins for the revised work.",
+    result:
+      "Result: the client receives a fresh review window, while the builder is protected from an endless unpaid review cycle.",
   },
 ];
 
-const features = [
-  {
-    icon: "🔒",
-    title: "USDC Smart Contract Escrow",
-    description:
-      "The agreed USDC payment is locked on-chain before work begins and released according to the project workflow.",
-  },
-  {
-    icon: "👤",
-    title: "Builder Profiles",
-    description:
-      "Builders can share their skills, social links, wallet identity, completed projects, and professional reputation.",
-  },
-  {
-    icon: "📦",
-    title: "Verifiable Delivery",
-    description:
-      "Builders submit delivery notes and links such as GitHub repositories, live demos, designs, or documents.",
-  },
-  {
-    icon: "⭐",
-    title: "Reputation",
-    description:
-      "Completed projects and client ratings create a transparent professional history for each builder.",
-  },
-  {
-    icon: "☕",
-    title: "USDC Tipping",
-    description:
-      "Visitors can support builders and creators directly by sending USDC through their public PayNode profile.",
-  },
-  {
-    icon: "🔍",
-    title: "Transparent USDC Activity",
-    description:
-      "USDC deposits, releases, refunds, and project events can be verified through the Arc Network explorer.",
-  },
-];
-
-const contractFunctions = [
-  {
-    name: "createProject()",
-    description:
-      "Creates a new USDC escrow agreement between a client and a builder.",
-  },
-  {
-    name: "approve()",
-    description:
-      "Allows the client to approve the escrow contract to transfer the exact project amount of USDC.",
-  },
-  {
-    name: "fundProject()",
-    description:
-      "Uses USDC transferFrom() to move the approved project amount into the escrow contract.",
-  },
-  {
-    name: "requestRevision()",
-    description:
-      "Allows the client to request another delivery while the USDC remains locked in escrow.",
-  },
-  {
-    name: "releaseFunds()",
-    description:
-      "Transfers the escrowed USDC from the contract to the builder after approval.",
-  },
-  {
-    name: "cancelProject()",
-    description:
-      "Cancels an eligible project or returns escrowed USDC according to the contract rules.",
-  },
-  {
-    name: "raiseDispute()",
-    description:
-      "Pauses normal settlement and keeps the project USDC locked during a dispute.",
-  },
-];
-
-const projectStates = [
-  {
-    status: "Awaiting USDC",
-    color: "border-amber-500/30 bg-amber-500/10 text-amber-300",
-    description:
-      "The agreement has been created, but the client has not deposited the required USDC yet.",
-  },
-  {
-    status: "USDC Funded",
-    color: "border-blue-500/30 bg-blue-500/10 text-blue-300",
-    description:
-      "The agreed USDC amount is locked in the escrow contract and the builder can begin work.",
-  },
-  {
-    status: "In Revision",
-    color: "border-violet-500/30 bg-violet-500/10 text-violet-300",
-    description:
-      "The client requested a revision while the USDC remains secured inside the escrow contract.",
-  },
-  {
-    status: "Completed",
-    color: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
-    description:
-      "The client approved the work and the contract transferred the escrowed USDC to the builder.",
-  },
-  {
-    status: "Disputed",
-    color: "border-red-500/30 bg-red-500/10 text-red-300",
-    description:
-      "A dispute was raised and the USDC remains locked while the normal project flow is paused.",
-  },
-  {
-    status: "Cancelled / Refunded",
-    color: "border-slate-500/30 bg-slate-500/10 text-slate-300",
-    description:
-      "The project was cancelled or the escrowed USDC was returned according to the contract rules.",
-  },
-];
-
-const securityItems = [
-  {
-    title: "Wallet-based access",
-    description:
-      "USDC approvals, escrow deposits, releases, and refunds require authorization through the connected wallet.",
-  },
-  {
-    title: "Non-custodial USDC escrow",
-    description:
-      "USDC is managed by the escrow smart contract rather than a private PayNode platform wallet.",
-  },
-  {
-    title: "Exact approval amount",
-    description:
-      "The client approves only the USDC amount required for the selected project.",
-  },
-  {
-    title: "Role-based actions",
-    description:
-      "Only authorized client or builder wallets can perform their corresponding project actions.",
-  },
-  {
-    title: "Transparent USDC settlement",
-    description:
-      "USDC deposits, releases, and refunds can be inspected through the Arc Network explorer.",
-  },
-  {
-    title: "Token decimal normalization",
-    description:
-      "USDC amounts are converted using the token decimal configuration before blockchain transactions are submitted.",
-  },
+const securityRules = [
+  "The builder cannot receive the project payment before submitting work.",
+  "The client cannot keep a completed delivery unpaid forever.",
+  "The client can refund after the project deadline if no delivery exists.",
+  "The payment remains locked while a revision is active.",
+  "Every revised delivery starts a new 7-day review period.",
+  "Project payments, refunds, settlements, and tips use USDC only.",
 ];
 
 const faqs = [
   {
-    question: "What is PayNode?",
+    question:
+      "What is the difference between the project deadline and the 7-day review period?",
     answer:
-      "PayNode is a Web3 collaboration and USDC payment platform that gives builders a public professional profile and lets clients create escrow-backed projects with them.",
+      "The project deadline is the time the builder has to submit the initial delivery. The 7-day review period starts only after a delivery is submitted and gives the client time to approve, request a revision, or raise a dispute.",
   },
   {
-    question: "Is PayNode a freelance marketplace?",
+    question: "What happens if the builder misses the project deadline?",
     answer:
-      "Not in its current version. Clients and builders can find each other through X, Discord, LinkedIn, Telegram, GitHub, or any other platform. PayNode secures the agreement, delivery, and USDC payment.",
+      "If no delivery has been submitted before the project deadline, the client becomes eligible to refund the locked payment from the smart contract.",
   },
   {
-    question: "Which currencies does PayNode support?",
+    question: "What happens if the client ignores a submitted delivery?",
     answer:
-      "PayNode supports only USDC. Native network tokens and other ERC-20 tokens cannot be used for project escrow, settlement, refunds, or tips.",
+      "The client has 7 days to respond. After that review period expires, the builder becomes eligible to claim the escrowed USDC directly from the smart contract.",
   },
   {
-    question: "Why does PayNode use only USDC?",
+    question: "What happens when a revision is requested?",
     answer:
-      "USDC gives clients and builders a stable unit for pricing work. A project agreed at 500 USDC remains priced at 500 USDC throughout the project workflow.",
+      "The current review period closes and the payment remains locked. When the builder submits the revised work, a new 7-day review period begins.",
   },
   {
-    question: "Who controls the project USDC?",
+    question: "Can the builder receive payment without delivering work?",
     answer:
-      "After funding, the escrow smart contract controls the project's USDC according to its rules. PayNode does not hold project funds inside a private platform wallet.",
+      "No. The escrow rules require a delivery before the normal approval or review-expiry settlement path can be used.",
   },
   {
-    question: "Can a builder withdraw USDC before approval?",
+    question:
+      "Can the client keep the payment locked forever after delivery?",
     answer:
-      "No. The builder cannot independently withdraw the escrowed USDC. Settlement occurs through the contract workflow after client approval.",
+      "No. The 7-day review period prevents an inactive client from holding the builder's payment indefinitely.",
   },
   {
-    question: "What can a builder submit as delivery?",
+    question: "Which payment asset does PayNode support?",
     answer:
-      "A delivery can include notes and links to a GitHub repository, live website, design file, document, video, or another agreed deliverable.",
+      "PayNode uses USDC for project escrow, settlement, refunds, and tips. Native network tokens and other ERC-20 tokens are not supported for these payments.",
   },
   {
-    question: "Why is a wallet not required for browsing?",
+    question: "Where can developers find the technical implementation?",
     answer:
-      "Public profiles and documentation can be viewed without connecting a wallet. Wallet connection is only requested when a user needs to perform a signed or financial action.",
-  },
-  {
-    question: "Why was PayNode built on Arc Network?",
-    answer:
-      "PayNode uses Arc Network to demonstrate a programmable USDC workflow in which project agreements, escrow deposits, revisions, releases, and refunds are executed transparently on-chain.",
+      "The public GitHub repository contains the contract code, application architecture, implementation details, and development history.",
   },
 ];
+
+function PayNodeLogo({
+  className = "h-11 w-11",
+}: {
+  className?: string;
+}) {
+  return (
+    <svg
+      viewBox="0 0 100 100"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+      aria-label="PayNode logo"
+      role="img"
+    >
+      <defs>
+        <linearGradient
+          id="paynode-grad"
+          x1="0%"
+          y1="0%"
+          x2="100%"
+          y2="100%"
+        >
+          <stop offset="0%" stopColor="#3B82F6" />
+          <stop offset="100%" stopColor="#A855F7" />
+        </linearGradient>
+
+        <filter
+          id="paynode-glow"
+          x="-20%"
+          y="-20%"
+          width="140%"
+          height="140%"
+        >
+          <feGaussianBlur stdDeviation="4" result="blur" />
+          <feComposite
+            in="SourceGraphic"
+            in2="blur"
+            operator="over"
+          />
+        </filter>
+      </defs>
+
+      <circle
+        cx="28"
+        cy="50"
+        r="16"
+        stroke="url(#paynode-grad)"
+        strokeWidth="7"
+        filter="url(#paynode-glow)"
+      />
+
+      <circle
+        cx="72"
+        cy="50"
+        r="16"
+        stroke="url(#paynode-grad)"
+        strokeWidth="7"
+        filter="url(#paynode-glow)"
+      />
+
+      <path
+        d="M44 50h12"
+        stroke="url(#paynode-grad)"
+        strokeWidth="7"
+        strokeLinecap="round"
+        filter="url(#paynode-glow)"
+      />
+
+      <circle
+        cx="50"
+        cy="50"
+        r="4.5"
+        fill="#34D399"
+        className="animate-pulse"
+      />
+    </svg>
+  );
+}
 
 function SectionHeading({
   eyebrow,
@@ -256,7 +229,9 @@ function SectionHeading({
       </h2>
 
       {description && (
-        <p className="text-base leading-7 text-slate-400">{description}</p>
+        <p className="text-base leading-7 text-slate-400">
+          {description}
+        </p>
       )}
     </div>
   );
@@ -304,19 +279,17 @@ export default function DocsPage() {
       <header className="sticky top-0 z-50 border-b border-slate-800/80 bg-[#090d16]/85 backdrop-blur-xl">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-5 md:px-8">
           <a href="#overview" className="flex items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] border border-slate-700/50 bg-slate-800/40 shadow-inner">
-              <div className="flex items-center">
-                <div className="h-[14px] w-[14px] rounded-full border-[2.5px] border-blue-400 shadow-[0_0_8px_rgba(96,165,250,0.6)]"></div>
-                <div className="z-10 -mx-[3px] h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.9)]"></div>
-                <div className="h-[14px] w-[14px] rounded-full border-[2.5px] border-violet-500 shadow-[0_0_8px_rgba(139,92,246,0.6)]"></div>
-              </div>
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-slate-800 bg-slate-950/70">
+              <PayNodeLogo className="h-9 w-9" />
             </div>
 
             <div className="flex items-center gap-2">
-              <span className="text-lg font-bold text-white">PayNode Docs</span>
+              <span className="text-lg font-bold text-white">
+                PayNode Docs
+              </span>
 
               <span className="hidden rounded-full border border-blue-500/20 bg-blue-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-300 sm:inline-flex">
-                v1.0 · Arc Network Testnet
+                Arc Network Testnet
               </span>
             </div>
           </a>
@@ -328,7 +301,7 @@ export default function DocsPage() {
               rel="noreferrer"
               className="hidden rounded-lg border border-slate-700 px-4 py-2 text-sm font-medium text-slate-300 transition hover:border-slate-600 hover:bg-slate-800 hover:text-white sm:inline-flex"
             >
-              GitHub
+              Technical Docs
             </a>
 
             <a
@@ -372,21 +345,13 @@ export default function DocsPage() {
                 Payment asset
               </p>
 
-              <p className="mt-2 text-sm font-medium text-white">USDC only</p>
+              <p className="mt-2 text-sm font-medium text-white">
+                USDC only
+              </p>
 
               <p className="mt-1 text-xs leading-5 text-slate-500">
-                Project escrow, settlement, refunds, and tipping are exclusively
-                denominated in USDC.
-              </p>
-            </div>
-
-            <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
-              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                Current network
-              </p>
-
-              <p className="mt-2 text-sm font-medium text-white">
-                Arc Network Testnet
+                Project escrow, settlement, refunds, and tips use
+                USDC.
               </p>
             </div>
           </div>
@@ -396,68 +361,59 @@ export default function DocsPage() {
           <section id="overview" className="scroll-mt-24">
             <div className="relative overflow-hidden rounded-3xl border border-slate-800 bg-slate-950/60 px-6 py-12 md:px-12 md:py-16">
               <div className="pointer-events-none absolute -right-32 -top-32 h-80 w-80 rounded-full bg-blue-600/20 blur-3xl" />
-              <div className="pointer-events-none absolute -bottom-32 left-1/3 h-72 w-72 rounded-full bg-indigo-600/10 blur-3xl" />
+              <div className="pointer-events-none absolute -bottom-32 left-1/3 h-72 w-72 rounded-full bg-violet-600/10 blur-3xl" />
 
               <div className="relative max-w-4xl">
-                <div className="mb-6 inline-flex items-center rounded-full border border-blue-500/20 bg-blue-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-blue-300">
-                  USDC escrow infrastructure
+                <div className="mb-6 inline-flex items-center rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-emerald-300">
+                  Fair escrow for both sides
                 </div>
 
-                <h1 className="max-w-3xl text-4xl font-black tracking-tight text-white md:text-6xl">
-                  Secure collaboration for Web3 builders and clients.
+                <h1 className="max-w-4xl text-4xl font-black tracking-tight text-white md:text-6xl">
+                  Trust the rules, not the other person.
                 </h1>
 
-                <p className="mt-6 text-xl font-medium text-slate-300">
-                  One Link. Get Hired. Get Paid.
+                <p className="mt-6 max-w-3xl text-xl font-medium leading-8 text-slate-300">
+                  PayNode protects the client when work is not
+                  delivered and protects the builder when delivered
+                  work is ignored.
                 </p>
 
                 <p className="mt-5 max-w-3xl text-base leading-8 text-slate-400 md:text-lg">
-                  PayNode is a USDC-based collaboration and escrow platform
-                  built on Arc Network. Clients create projects and lock the
-                  agreed USDC payment inside a smart contract. Builders deliver
-                  their work, and the USDC is released after client approval.
+                  Clients lock the agreed payment in a smart contract.
+                  Builders submit their work through the platform.
+                  Clear deadlines, review periods, refunds, revisions,
+                  and settlement rules keep either side from holding
+                  complete control.
                 </p>
 
                 <div className="mt-8 flex flex-col gap-3 sm:flex-row">
                   <a
-                    href="https://paynode.online"
-                    target="_blank"
-                    rel="noreferrer"
+                    href="#escrow-rules"
                     className="inline-flex items-center justify-center rounded-xl bg-blue-600 px-5 py-3 text-sm font-bold text-white transition hover:bg-blue-500"
                   >
-                    Launch PayNode
+                    See How Escrow Works
                   </a>
 
                   <a
-                    href="https://github.com/padracrypto/PayNode"
+                    href="https://paynode.online"
                     target="_blank"
                     rel="noreferrer"
                     className="inline-flex items-center justify-center rounded-xl border border-slate-700 bg-slate-900 px-5 py-3 text-sm font-bold text-slate-200 transition hover:border-slate-600 hover:bg-slate-800"
                   >
-                    View public repository
+                    Launch App
                   </a>
                 </div>
               </div>
             </div>
 
             <div className="mt-8 rounded-2xl border border-slate-800 bg-gradient-to-br from-slate-900 to-slate-950 p-5 md:p-8">
-              <div className="mb-6 text-center">
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                  USDC payment workflow
-                </p>
-
-                <h2 className="mt-2 text-xl font-bold text-white">
-                  From agreement to USDC settlement
-                </h2>
-              </div>
-
-              <div className="grid grid-cols-1 items-stretch gap-3 md:grid-cols-[1fr_auto_1fr_auto_1fr_auto_1fr_auto_1fr]">
+              <div className="grid gap-3 md:grid-cols-[1fr_auto_1fr_auto_1fr_auto_1fr_auto_1fr]">
                 {[
                   ["01", "Create Project"],
-                  ["02", "Lock USDC"],
+                  ["02", "Lock Payment"],
                   ["03", "Deliver Work"],
-                  ["04", "Client Approves"],
-                  ["05", "Receive USDC"],
+                  ["04", "7-Day Review"],
+                  ["05", "Approve or Claim"],
                 ].map(([number, title], index) => (
                   <div key={title} className="contents">
                     <div className="flex min-h-24 flex-col justify-center rounded-xl border border-slate-800 bg-slate-900/80 p-4 text-center">
@@ -472,7 +428,9 @@ export default function DocsPage() {
 
                     {index < 4 && (
                       <div className="flex items-center justify-center text-xl font-bold text-blue-400">
-                        <span className="rotate-90 md:rotate-0">→</span>
+                        <span className="rotate-90 md:rotate-0">
+                          →
+                        </span>
                       </div>
                     )}
                   </div>
@@ -481,96 +439,148 @@ export default function DocsPage() {
             </div>
           </section>
 
-          <section id="problem" className="scroll-mt-24 space-y-8">
+          <section
+            id="problem"
+            className="scroll-mt-24 space-y-8"
+          >
             <SectionHeading
-              eyebrow="Problem and solution"
-              title="Freelance collaboration still depends heavily on personal trust."
-              description="When two people meet online, both sides take a risk. The builder may complete the work and never get paid. The client may pay in advance and never receive the expected delivery. PayNode turns the agreement into an enforceable on-chain USDC payment workflow."
+              eyebrow="What PayNode solves"
+              title="Online work creates risk for both sides."
+              description="A builder may finish the work and never get paid. A client may fund a project and receive nothing. PayNode replaces open-ended trust with clear rules that both sides can understand before the project begins."
             />
 
-            <div className="overflow-hidden rounded-2xl border border-slate-800">
-              <div className="grid grid-cols-2 border-b border-slate-800 bg-slate-900/80">
-                <div className="p-4 text-sm font-semibold text-slate-300 md:p-5">
-                  Traditional workflow
-                </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <article className="rounded-2xl border border-blue-500/20 bg-blue-500/5 p-6">
+                <span className="inline-flex rounded-full border border-blue-500/20 bg-blue-500/10 px-3 py-1 text-xs font-semibold text-blue-300">
+                  For Clients
+                </span>
 
-                <div className="border-l border-slate-800 p-4 text-sm font-semibold text-blue-300 md:p-5">
-                  PayNode workflow
-                </div>
-              </div>
+                <h3 className="mt-5 text-xl font-bold text-white">
+                  No delivery means a refund path.
+                </h3>
 
-              {[
-                ["Payment depends on trust", "USDC is locked in escrow"],
-                [
-                  "A builder may face payment withholding",
-                  "USDC is secured before work begins",
-                ],
-                [
-                  "A client may lose an upfront payment",
-                  "USDC is released only after approval",
-                ],
-                [
-                  "Payment value may change during the project",
-                  "USDC provides stable project pricing",
-                ],
-                [
-                  "Centralized platforms control settlement",
-                  "USDC settlement executes on-chain",
-                ],
-                [
-                  "Professional history can be difficult to verify",
-                  "Completed work contributes to reputation",
-                ],
-              ].map(([traditional, paynode]) => (
-                <div
-                  key={traditional}
-                  className="grid grid-cols-2 border-b border-slate-800/80 last:border-b-0"
-                >
-                  <div className="p-4 text-sm leading-6 text-slate-500 md:p-5">
-                    {traditional}
-                  </div>
+                <p className="mt-3 leading-7 text-slate-400">
+                  If the project deadline passes and the builder has
+                  not submitted any work, the client becomes eligible
+                  to recover the locked payment.
+                </p>
+              </article>
 
-                  <div className="border-l border-slate-800 p-4 text-sm leading-6 text-slate-300 md:p-5">
-                    {paynode}
-                  </div>
-                </div>
-              ))}
-            </div>
+              <article className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-6">
+                <span className="inline-flex rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-300">
+                  For Builders
+                </span>
 
-            <div className="rounded-2xl border border-blue-500/20 bg-blue-500/5 p-6">
-              <p className="text-base font-semibold text-white">
-                PayNode does not replace X, Discord, Telegram, LinkedIn, or
-                email.
-              </p>
+                <h3 className="mt-5 text-xl font-bold text-white">
+                  Delivered work cannot be ignored forever.
+                </h3>
 
-              <p className="mt-2 leading-7 text-slate-400">
-                Clients and builders can negotiate wherever they already
-                communicate. PayNode is used after they agree, providing a
-                shared contract, verifiable delivery flow, and secure USDC
-                payment.
-              </p>
+                <p className="mt-3 leading-7 text-slate-400">
+                  After delivery, the client has 7 days to respond. If
+                  no action is taken, the builder becomes eligible to
+                  claim the escrowed payment.
+                </p>
+              </article>
             </div>
           </section>
 
-          <section id="features" className="scroll-mt-24 space-y-8">
+          <section
+            id="protection"
+            className="scroll-mt-24 space-y-8"
+          >
             <SectionHeading
-              eyebrow="Core product"
-              title="One profile for visibility, collaboration, and USDC payment."
-              description="PayNode combines a shareable Web3 professional profile with a USDC escrow-backed project workflow."
+              eyebrow="Balanced by design"
+              title="PayNode does not give complete control to either side."
+              description="The builder cannot receive payment without delivering the work, and the client cannot keep a completed delivery unpaid forever."
             />
 
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {features.map((feature) => (
-                <article
-                  key={feature.title}
-                  className="rounded-2xl border border-slate-800 bg-slate-900/40 p-6 transition hover:border-slate-700 hover:bg-slate-900/70"
-                >
-                  <div className="text-2xl">{feature.icon}</div>
+            <div className="rounded-3xl border border-slate-800 bg-slate-950 p-6 md:p-8">
+              <div className="grid gap-4 md:grid-cols-3">
+                <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-blue-400">
+                    Before delivery
+                  </p>
 
-                  <h3 className="mt-4 font-bold text-white">{feature.title}</h3>
+                  <h3 className="mt-3 font-bold text-white">
+                    The project deadline protects the client.
+                  </h3>
 
                   <p className="mt-2 text-sm leading-6 text-slate-400">
-                    {feature.description}
+                    The builder must submit work before the agreed
+                    project deadline.
+                  </p>
+                </div>
+
+                <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-emerald-400">
+                    After delivery
+                  </p>
+
+                  <h3 className="mt-3 font-bold text-white">
+                    The 7-day review period protects the builder.
+                  </h3>
+
+                  <p className="mt-2 text-sm leading-6 text-slate-400">
+                    The client must approve, request a revision, or
+                    raise a dispute within 7 days.
+                  </p>
+                </div>
+
+                <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-violet-400">
+                    During revision
+                  </p>
+
+                  <h3 className="mt-3 font-bold text-white">
+                    The payment stays locked.
+                  </h3>
+
+                  <p className="mt-2 text-sm leading-6 text-slate-400">
+                    Revised work starts a fresh 7-day review period.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section
+            id="escrow-rules"
+            className="scroll-mt-24 space-y-8"
+          >
+            <SectionHeading
+              eyebrow="The core of PayNode"
+              title="How the escrow handles real project scenarios"
+              description="These four rules are the foundation of the contract and explain how PayNode protects both participants."
+            />
+
+            <div className="grid gap-4 md:grid-cols-2">
+              {escrowScenarios.map((scenario) => (
+                <article
+                  key={scenario.number}
+                  className="rounded-2xl border border-slate-800 bg-slate-900/40 p-6"
+                >
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-xs font-bold text-slate-500">
+                      Scenario {scenario.number}
+                    </span>
+
+                    <span
+                      className={`rounded-full border px-3 py-1 text-xs font-semibold ${scenario.badgeClass}`}
+                    >
+                      {scenario.badge}
+                    </span>
+                  </div>
+
+                  <h3 className="mt-5 text-lg font-bold text-white">
+                    {scenario.title}
+                  </h3>
+
+                  <p className="mt-3 text-sm leading-7 text-slate-400">
+                    {scenario.description}
+                  </p>
+
+                  <p className="mt-4 rounded-xl border border-slate-800 bg-slate-950/70 p-4 text-sm font-medium leading-6 text-slate-200">
+                    {scenario.result}
                   </p>
                 </article>
               ))}
@@ -578,96 +588,125 @@ export default function DocsPage() {
           </section>
 
           <section
-            id="why-arc-network"
-            className="scroll-mt-24 overflow-hidden rounded-3xl border border-blue-500/25 bg-gradient-to-br from-blue-950/30 via-slate-950 to-indigo-950/20 p-7 md:p-10"
+            id="timeline"
+            className="scroll-mt-24 space-y-8"
           >
             <SectionHeading
-              eyebrow="Network"
-              title="Why Arc Network?"
-              description="PayNode was designed as a programmable USDC payment workflow. Project creation, USDC escrow funding, approval, refunds, and settlement are represented by explicit smart contract actions rather than informal promises."
+              eyebrow="Two different clocks"
+              title="Project deadline and review period are not the same."
+              description="The project deadline applies before delivery. The 7-day review period applies only after the builder submits work."
             />
 
-            <div className="mt-8 grid gap-4 md:grid-cols-2">
-              {[
-                {
-                  title: "Programmable USDC settlement",
-                  text: "USDC moves according to smart contract conditions instead of manual platform decisions.",
-                },
-                {
-                  title: "Transparent transactions",
-                  text: "USDC deposits, releases, and refunds can be inspected through Arc Network transaction history.",
-                },
-                {
-                  title: "Stable project pricing",
-                  text: "Using USDC prevents project budgets from changing because of native token price volatility.",
-                },
-                {
-                  title: "Builder-focused infrastructure",
-                  text: "Arc Network Testnet provides the environment in which PayNode can test its complete USDC escrow workflow.",
-                },
-              ].map((item) => (
-                <div
-                  key={item.title}
-                  className="rounded-2xl border border-blue-500/15 bg-slate-950/50 p-5"
-                >
-                  <h3 className="font-bold text-white">{item.title}</h3>
+            <div className="overflow-hidden rounded-2xl border border-slate-800">
+              <div className="grid md:grid-cols-2">
+                <div className="border-b border-slate-800 p-6 md:border-b-0 md:border-r">
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-blue-400">
+                    Project deadline
+                  </p>
 
-                  <p className="mt-2 text-sm leading-6 text-slate-400">
-                    {item.text}
+                  <h3 className="mt-3 text-xl font-bold text-white">
+                    Before the first delivery
+                  </h3>
+
+                  <p className="mt-3 text-sm leading-7 text-slate-400">
+                    This is the agreed amount of time the builder has
+                    to submit the project. It can be 5 days, 10 days,
+                    or another duration selected for that project.
+                  </p>
+
+                  <p className="mt-4 text-sm font-semibold text-blue-300">
+                    No delivery by this deadline → the client can
+                    refund.
                   </p>
                 </div>
-              ))}
+
+                <div className="p-6">
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-400">
+                    7-day review period
+                  </p>
+
+                  <h3 className="mt-3 text-xl font-bold text-white">
+                    After each delivery
+                  </h3>
+
+                  <p className="mt-3 text-sm leading-7 text-slate-400">
+                    Once work is submitted, the client receives
+                    exactly 7 days to approve it, request a revision,
+                    or raise a dispute.
+                  </p>
+
+                  <p className="mt-4 text-sm font-semibold text-emerald-300">
+                    No response within 7 days → the builder can claim.
+                  </p>
+                </div>
+              </div>
             </div>
           </section>
 
-          <section className="space-y-16">
+          <section
+            id="builder-profile"
+            className="scroll-mt-24 space-y-8"
+          >
             <SectionHeading
-              eyebrow="Product walkthrough"
-              title="The complete project lifecycle"
-              description="The following screens show how a client and a builder move through the PayNode USDC escrow workflow."
+              eyebrow="One link for builders"
+              title="A PayNode profile is more than a portfolio."
+              description="It brings skills, completed projects, client ratings, social links, and wallet-based payments together in one shareable professional identity."
             />
 
-            <article id="builder-profile" className="scroll-mt-24 space-y-6">
-              <div className="flex items-start gap-4">
-                <StepNumber number={1} />
+            <div className="grid items-start gap-8 xl:grid-cols-[0.85fr_1.15fr]">
+              <div className="space-y-4">
+                {[
+                  "Share one profile on X, Discord, Telegram, LinkedIn, GitHub, or a personal website.",
+                  "Receive project invitations through the same public link.",
+                  "Accept USDC tips from people who want to support your work.",
+                  "Build visible reputation through completed projects and ratings.",
+                ].map((item) => (
+                  <div
+                    key={item}
+                    className="flex items-start gap-3 rounded-xl border border-slate-800 bg-slate-900/40 p-4"
+                  >
+                    <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-500/10 text-xs font-bold text-emerald-400">
+                      ✓
+                    </span>
 
-                <div>
-                  <h3 className="text-xl font-bold text-white">
-                    Create a builder profile
-                  </h3>
-
-                  <p className="mt-2 max-w-3xl leading-7 text-slate-400">
-                    A builder creates a shareable professional identity with a
-                    username, biography, skills, wallet address, and social
-                    links such as GitHub, X, LinkedIn, and a personal website.
-                    This page becomes the builder&apos;s main PayNode link.
-                  </p>
-                </div>
+                    <p className="text-sm leading-6 text-slate-300">
+                      {item}
+                    </p>
+                  </div>
+                ))}
               </div>
 
               <Screenshot
                 src="/4.png"
                 alt="PayNode builder profile"
-                caption="A public PayNode profile displaying builder identity, skills, social links, and project reputation."
+                caption="A shareable PayNode profile combining skills, social links, project history, ratings, project requests, and USDC tips."
               />
-            </article>
+            </div>
+          </section>
 
-            <article id="create-project" className="scroll-mt-24 space-y-6">
+          <section
+            id="project-flow"
+            className="scroll-mt-24 space-y-14"
+          >
+            <SectionHeading
+              eyebrow="Product walkthrough"
+              title="A simple project flow"
+              description="The user-facing process stays simple, while the contract applies the rules in the background."
+            />
+
+            <article className="space-y-6">
               <div className="flex items-start gap-4">
-                <StepNumber number={2} />
+                <StepNumber number={1} />
 
                 <div>
                   <h3 className="text-xl font-bold text-white">
-                    Create the project agreement
+                    Create the agreement
                   </h3>
 
                   <p className="mt-2 max-w-3xl leading-7 text-slate-400">
-                    After the parties negotiate externally, the client opens
-                    the builder&apos;s profile and creates a project. The
-                    agreement includes the title, description, USDC budget,
-                    deadline, builder address, delivery expectations, and
-                    allowed revision count. Every project created through
-                    PayNode is priced exclusively in USDC.
+                    The client defines the project, budget, project
+                    deadline, delivery expectations, and revision
+                    limit. The payment is priced in USDC.
                   </p>
                 </div>
               </div>
@@ -675,54 +714,47 @@ export default function DocsPage() {
               <Screenshot
                 src="/10.png"
                 alt="Creating a PayNode project"
-                caption="The client defines the agreed project terms and USDC budget before creating the escrow agreement."
+                caption="The client defines the project terms, budget, deadline, and revision rules."
               />
             </article>
 
-            <article id="fund-escrow" className="scroll-mt-24 space-y-6">
+            <article className="space-y-6">
               <div className="flex items-start gap-4">
-                <StepNumber number={3} />
+                <StepNumber number={2} />
 
                 <div>
                   <h3 className="text-xl font-bold text-white">
-                    Fund the USDC escrow
+                    Lock the payment in escrow
                   </h3>
 
                   <p className="mt-2 max-w-3xl leading-7 text-slate-400">
-                    The newly created project begins in the{" "}
-                    <strong className="font-semibold text-slate-200">
-                      Awaiting USDC
-                    </strong>{" "}
-                    state. The client first approves the PayNode escrow
-                    contract to spend the exact project amount and then submits
-                    the USDC funding transaction. After confirmation, the
-                    contract holds the USDC and marks the project as funded.
+                    The client funds the smart contract before work
+                    begins. The builder can see that the agreed
+                    payment is secured.
                   </p>
                 </div>
               </div>
 
               <Screenshot
                 src="/11.png"
-                alt="Funding a PayNode USDC escrow project"
-                caption="The project dashboard after the agreed USDC amount has been locked in the escrow contract."
+                alt="Funding a PayNode escrow project"
+                caption="The agreed payment is locked before the builder starts working."
               />
             </article>
 
-            <article id="deliver-work" className="scroll-mt-24 space-y-6">
+            <article className="space-y-6">
               <div className="flex items-start gap-4">
-                <StepNumber number={4} />
+                <StepNumber number={3} />
 
                 <div>
                   <h3 className="text-xl font-bold text-white">
-                    Submit the completed work
+                    Submit the work
                   </h3>
 
                   <p className="mt-2 max-w-3xl leading-7 text-slate-400">
-                    The builder submits delivery notes and one or more relevant
-                    links. Depending on the project, these can point to a
-                    GitHub repository, live deployment, Figma file, document,
-                    video, or another agreed deliverable. The project USDC
-                    remains secured in escrow during review.
+                    The builder submits delivery notes and links to
+                    the final work. This action begins the 7-day
+                    review period.
                   </p>
                 </div>
               </div>
@@ -730,360 +762,151 @@ export default function DocsPage() {
               <Screenshot
                 src="/13.png"
                 alt="Submitting work through PayNode"
-                caption="The builder records delivery information so the client can review the completed work."
+                caption="Submitting a delivery starts the client's 7-day review period."
               />
             </article>
 
-            <article
-              id="release-payment"
-              className="scroll-mt-24 space-y-6"
-            >
+            <article className="space-y-6">
               <div className="flex items-start gap-4">
-                <StepNumber number={5} />
+                <StepNumber number={4} />
 
                 <div>
                   <h3 className="text-xl font-bold text-white">
-                    Approve and release USDC
+                    Approve, revise, dispute, or wait
                   </h3>
 
                   <p className="mt-2 max-w-3xl leading-7 text-slate-400">
-                    The client reviews the submitted delivery. The client can
-                    request a revision when changes are needed or approve the
-                    work. Approval triggers the settlement transaction and
-                    transfers the escrowed USDC directly to the builder&apos;s
-                    wallet.
+                    The client can approve the work, request a
+                    revision, or raise a dispute. If the client does
+                    nothing for 7 days, the builder becomes eligible
+                    to claim the payment.
                   </p>
                 </div>
               </div>
 
               <Screenshot
                 src="/16.png"
-                alt="PayNode completed USDC payment"
-                caption="After approval, the contract completes the project and transfers the escrowed USDC to the builder."
+                alt="PayNode project review and payment"
+                caption="Approval releases payment. No response for 7 days enables the builder's claim path."
               />
             </article>
+          </section>
 
-            <article id="rating" className="scroll-mt-24 space-y-6">
-              <div className="flex items-start gap-4">
-                <StepNumber number={6} />
+          <section
+            id="reputation"
+            className="scroll-mt-24 space-y-8"
+          >
+            <SectionHeading
+              eyebrow="Builder reputation"
+              title="Successful work becomes public credibility."
+              description="Every completed project and client rating can strengthen the builder's profile and help future clients make a more confident hiring decision."
+            />
 
-                <div>
-                  <h3 className="text-xl font-bold text-white">
-                    Add a rating to the builder&apos;s reputation
-                  </h3>
+            <div className="grid items-start gap-8 xl:grid-cols-[0.85fr_1.15fr]">
+              <div className="rounded-2xl border border-violet-500/20 bg-violet-500/5 p-6">
+                <h3 className="text-xl font-bold text-white">
+                  A strong profile creates long-term value.
+                </h3>
 
-                  <p className="mt-2 max-w-3xl leading-7 text-slate-400">
-                    After a successful USDC settlement, the client can leave a
-                    star rating and review. The result becomes part of the
-                    builder&apos;s professional history and helps future
-                    clients evaluate previous work.
-                  </p>
+                <p className="mt-3 leading-7 text-slate-400">
+                  High ratings and successful project history act as
+                  visible proof of reliability. Builders can keep
+                  sharing the same link as their reputation grows.
+                </p>
+
+                <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                  {[
+                    "More trust before a new project",
+                    "A visible history of completed work",
+                    "One link for projects and tips",
+                    "Reputation that grows over time",
+                  ].map((item) => (
+                    <div
+                      key={item}
+                      className="rounded-xl border border-violet-500/15 bg-slate-950/40 p-4 text-sm text-slate-300"
+                    >
+                      {item}
+                    </div>
+                  ))}
                 </div>
               </div>
 
               <Screenshot
                 src="/17.png"
-                alt="PayNode client rating interface"
-                caption="The client rates the completed project and contributes to the builder's PayNode reputation."
+                alt="PayNode builder rating"
+                caption="Client ratings and completed projects strengthen the builder's public reputation."
               />
-            </article>
+            </div>
           </section>
 
-          <section id="project-states" className="scroll-mt-24 space-y-8">
+          <section
+            id="security"
+            className="scroll-mt-24 space-y-8"
+          >
             <SectionHeading
-              eyebrow="State machine"
-              title="Every project has a clear on-chain state."
-              description="The project state determines what each party can do and how the escrowed USDC is handled."
+              eyebrow="Security rules"
+              title="Simple rules users can understand before they connect a wallet."
+              description="The most important protections are visible and predictable. Users do not need to understand contract code to understand their rights."
             />
 
             <div className="grid gap-4 md:grid-cols-2">
-              {projectStates.map((item) => (
+              {securityRules.map((rule) => (
                 <div
-                  key={item.status}
-                  className="rounded-2xl border border-slate-800 bg-slate-900/40 p-5"
+                  key={rule}
+                  className="flex items-start gap-3 rounded-2xl border border-slate-800 bg-slate-900/40 p-5"
                 >
-                  <span
-                    className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${item.color}`}
-                  >
-                    {item.status}
+                  <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-500/10 text-xs font-bold text-emerald-400">
+                    ✓
                   </span>
 
-                  <p className="mt-4 text-sm leading-6 text-slate-400">
-                    {item.description}
+                  <p className="text-sm leading-6 text-slate-300">
+                    {rule}
                   </p>
-                </div>
-              ))}
-            </div>
-
-            <div className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-950 p-6">
-              <div className="flex min-w-[760px] items-center justify-between gap-2">
-                {[
-                  "Awaiting USDC",
-                  "USDC Funded",
-                  "In Revision",
-                  "Completed",
-                ].map((state, index) => (
-                  <div key={state} className="contents">
-                    <div className="rounded-xl border border-slate-700 bg-slate-900 px-5 py-4 text-center text-sm font-semibold text-white">
-                      {state}
-                    </div>
-
-                    {index < 3 && (
-                      <div className="text-lg font-bold text-blue-400">→</div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          </section>
-
-          <section id="smart-contract" className="scroll-mt-24 space-y-8">
-            <SectionHeading
-              eyebrow="Contract interface"
-              title="Core USDC smart contract functions"
-              description="PayNode uses an ERC-20 escrow contract. The client approves the exact USDC amount, the contract receives it through transferFrom(), and settlement uses USDC transfer() rather than native network value."
-            />
-
-            <div className="overflow-hidden rounded-2xl border border-slate-800 bg-[#050810]">
-              <div className="flex items-center gap-2 border-b border-slate-800 px-5 py-3">
-                <span className="h-2.5 w-2.5 rounded-full bg-red-400/70" />
-                <span className="h-2.5 w-2.5 rounded-full bg-amber-400/70" />
-                <span className="h-2.5 w-2.5 rounded-full bg-emerald-400/70" />
-
-                <span className="ml-2 text-xs text-slate-500">
-                  PayNodeEscrow.sol
-                </span>
-              </div>
-
-              <div className="divide-y divide-slate-800/80">
-                {contractFunctions.map((item) => (
-                  <div
-                    key={item.name}
-                    className="grid gap-3 p-5 md:grid-cols-[190px_minmax(0,1fr)]"
-                  >
-                    <code className="font-mono text-sm font-semibold text-blue-300">
-                      {item.name}
-                    </code>
-
-                    <p className="text-sm leading-6 text-slate-400">
-                      {item.description}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-blue-500/20 bg-blue-500/5 p-5">
-              <p className="text-sm font-semibold text-blue-200">
-                USDC-only payment system
-              </p>
-
-              <p className="mt-2 text-sm leading-6 text-slate-400">
-                PayNode does not accept native network tokens or arbitrary
-                ERC-20 assets for project payments. Every project budget,
-                escrow deposit, release, refund, and tip is denominated and
-                settled exclusively in USDC.
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-5">
-              <p className="text-sm font-semibold text-amber-200">
-                Testnet notice
-              </p>
-
-              <p className="mt-2 text-sm leading-6 text-slate-400">
-                PayNode is currently an MVP running on Arc Network Testnet.
-                Testnet contracts and assets should not be treated as
-                production-ready financial infrastructure until additional
-                testing and an independent smart contract review are complete.
-              </p>
-            </div>
-          </section>
-
-          <section id="architecture" className="scroll-mt-24 space-y-8">
-            <SectionHeading
-              eyebrow="System design"
-              title="Technical architecture"
-              description="PayNode separates product metadata from critical USDC execution. The application database improves usability, while the smart contract remains the source of truth for escrow settlement."
-            />
-
-            <div className="rounded-3xl border border-slate-800 bg-slate-950 p-6 md:p-10">
-              <div className="grid gap-4 md:grid-cols-[1fr_auto_1fr_auto_1fr]">
-                <div className="rounded-2xl border border-slate-700 bg-slate-900 p-5 text-center">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-blue-400">
-                    Interface
-                  </p>
-
-                  <h3 className="mt-2 font-bold text-white">Next.js App</h3>
-
-                  <p className="mt-2 text-xs leading-5 text-slate-500">
-                    Profiles, dashboards, project forms, wallet actions, USDC
-                    approvals, and delivery views.
-                  </p>
-                </div>
-
-                <div className="flex items-center justify-center text-xl font-bold text-blue-400">
-                  <span className="rotate-90 md:rotate-0">↔</span>
-                </div>
-
-                <div className="rounded-2xl border border-slate-700 bg-slate-900 p-5 text-center">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-violet-400">
-                    Metadata
-                  </p>
-
-                  <h3 className="mt-2 font-bold text-white">Supabase</h3>
-
-                  <p className="mt-2 text-xs leading-5 text-slate-500">
-                    User profiles, project descriptions, delivery links,
-                    reviews, and synchronized blockchain IDs.
-                  </p>
-                </div>
-
-                <div className="flex items-center justify-center text-xl font-bold text-blue-400">
-                  <span className="rotate-90 md:rotate-0">↔</span>
-                </div>
-
-                <div className="rounded-2xl border border-blue-500/30 bg-blue-500/5 p-5 text-center">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-emerald-400">
-                    USDC settlement
-                  </p>
-
-                  <h3 className="mt-2 font-bold text-white">
-                    Arc Network Escrow Contract
-                  </h3>
-
-                  <p className="mt-2 text-xs leading-5 text-slate-500">
-                    USDC deposits, escrow balances, revisions, releases,
-                    refunds, and dispute events.
-                  </p>
-                </div>
-              </div>
-
-              <div className="mt-4 flex justify-center">
-                <div className="w-full rounded-2xl border border-blue-500/20 bg-blue-500/5 p-5 text-center md:w-2/3">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-blue-400">
-                    Payment asset
-                  </p>
-
-                  <h3 className="mt-2 text-lg font-bold text-white">USDC</h3>
-
-                  <p className="mt-2 text-xs leading-5 text-slate-500">
-                    The only supported asset for project escrow, settlement,
-                    refunds, and tipping.
-                  </p>
-                </div>
-              </div>
-
-              <div className="mt-6 rounded-2xl border border-slate-800 bg-[#090d16] p-5">
-                <p className="text-sm leading-7 text-slate-400">
-                  The frontend never assumes that a database row ID is the same
-                  as an on-chain project ID. PayNode stores a dedicated{" "}
-                  <code className="rounded bg-slate-800 px-1.5 py-0.5 font-mono text-blue-300">
-                    blockchain_id
-                  </code>{" "}
-                  and uses it for every smart contract interaction.
-                </p>
-              </div>
-            </div>
-          </section>
-
-          <section id="synchronization" className="scroll-mt-24 space-y-8">
-            <SectionHeading
-              eyebrow="Data integrity"
-              title="Database and blockchain synchronization"
-              description="A Web3 application can fail even when its contract and database work correctly on their own. The important part is keeping both systems mapped to the same USDC escrow project."
-            />
-
-            <div className="grid gap-4 md:grid-cols-3">
-              {[
-                {
-                  number: "01",
-                  title: "Submit transaction",
-                  description:
-                    "The client creates the project through the smart contract and waits for transaction confirmation.",
-                },
-                {
-                  number: "02",
-                  title: "Decode the event",
-                  description:
-                    "The application reads the ProjectCreated event and extracts the actual on-chain project ID.",
-                },
-                {
-                  number: "03",
-                  title: "Store the mapping",
-                  description:
-                    "The blockchain ID is saved beside the database record and used for all future USDC contract calls.",
-                },
-              ].map((item) => (
-                <div
-                  key={item.number}
-                  className="rounded-2xl border border-slate-800 bg-slate-900/40 p-6"
-                >
-                  <span className="text-xs font-bold text-blue-400">
-                    {item.number}
-                  </span>
-
-                  <h3 className="mt-3 font-bold text-white">{item.title}</h3>
-
-                  <p className="mt-2 text-sm leading-6 text-slate-400">
-                    {item.description}
-                  </p>
-                </div>
-              ))}
-            </div>
-
-            <div className="rounded-2xl border border-slate-800 bg-slate-950 p-6">
-              <pre className="overflow-x-auto text-sm leading-7 text-slate-300">
-                <code>{`Database project ID:   project.id
-Blockchain project ID: project.blockchain_id
-
-UI routes use:          project.id
-Contract functions use: project.blockchain_id`}</code>
-              </pre>
-            </div>
-          </section>
-
-          <section id="security" className="scroll-mt-24 space-y-8">
-            <SectionHeading
-              eyebrow="Security model"
-              title="Designed to reduce unnecessary trust."
-              description="PayNode limits wallet requests to actions that require authorization and keeps USDC payment rules inside the escrow contract."
-            />
-
-            <div className="grid gap-4 md:grid-cols-2">
-              {securityItems.map((item) => (
-                <div
-                  key={item.title}
-                  className="rounded-2xl border border-slate-800 bg-slate-900/40 p-6"
-                >
-                  <div className="flex items-start gap-3">
-                    <span className="mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-500/10 text-xs font-bold text-emerald-400">
-                      ✓
-                    </span>
-
-                    <div>
-                      <h3 className="font-bold text-white">{item.title}</h3>
-
-                      <p className="mt-2 text-sm leading-6 text-slate-400">
-                        {item.description}
-                      </p>
-                    </div>
-                  </div>
                 </div>
               ))}
             </div>
 
             <div className="rounded-2xl border border-red-500/20 bg-red-500/5 p-6">
               <h3 className="font-semibold text-red-200">
-                PayNode will never ask for a seed phrase or private key.
+                PayNode will never ask for a seed phrase or private
+                key.
               </h3>
 
               <p className="mt-2 text-sm leading-6 text-slate-400">
-                Users should inspect every wallet request before signing,
-                especially USDC approval transactions, and verify that they are
-                connected to the official PayNode application and the expected
-                Arc Network environment.
+                Review every wallet request before signing and use
+                only the official PayNode application.
               </p>
+            </div>
+          </section>
+
+          <section
+            id="why-arc-network"
+            className="scroll-mt-24 overflow-hidden rounded-3xl border border-blue-500/25 bg-gradient-to-br from-blue-950/30 via-slate-950 to-violet-950/20 p-7 md:p-10"
+          >
+            <SectionHeading
+              eyebrow="Built on Arc Network"
+              title="Programmable rules make the escrow predictable."
+              description="PayNode uses Arc Network to turn deadlines, review periods, revisions, refunds, and settlement into transparent smart contract rules instead of private platform decisions."
+            />
+
+            <div className="mt-8 flex flex-col gap-4 sm:flex-row">
+              <a
+                href="https://github.com/padracrypto/PayNode"
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center justify-center rounded-xl border border-slate-700 bg-slate-950/60 px-5 py-3 text-sm font-bold text-slate-200 transition hover:border-slate-600 hover:bg-slate-900"
+              >
+                View Contract & Architecture on GitHub
+              </a>
+
+              <a
+                href="https://paynode.online"
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center justify-center rounded-xl bg-blue-600 px-5 py-3 text-sm font-bold text-white transition hover:bg-blue-500"
+              >
+                Launch PayNode
+              </a>
             </div>
           </section>
 
@@ -1091,7 +914,7 @@ Contract functions use: project.blockchain_id`}</code>
             <SectionHeading
               eyebrow="Questions"
               title="Frequently asked questions"
-              description="The main concepts behind PayNode, its USDC escrow workflow, and its current testnet release."
+              description="The essential rules to understand before starting a project."
             />
 
             <div className="space-y-3">
@@ -1118,18 +941,17 @@ Contract functions use: project.blockchain_id`}</code>
             </div>
           </section>
 
-          <section className="overflow-hidden rounded-3xl border border-blue-500/25 bg-gradient-to-r from-blue-600/15 to-indigo-600/10 p-8 text-center md:p-12">
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-400">
-              PayNode on Arc Network
-            </p>
+          <section className="overflow-hidden rounded-3xl border border-blue-500/25 bg-gradient-to-r from-blue-600/15 to-violet-600/10 p-8 text-center md:p-12">
+            <PayNodeLogo className="mx-auto h-16 w-16" />
 
             <h2 className="mt-4 text-3xl font-black tracking-tight text-white md:text-4xl">
-              Negotiate anywhere. Get paid in USDC.
+              One link. Fair rules. Secure payment.
             </h2>
 
             <p className="mx-auto mt-4 max-w-2xl leading-7 text-slate-400">
-              Explore the MVP, create a builder profile, and test a complete
-              USDC escrow workflow on Arc Network Testnet.
+              Build your reputation, receive tips, start protected
+              projects, and get paid through a balanced escrow
+              workflow.
             </p>
 
             <div className="mt-7 flex flex-col justify-center gap-3 sm:flex-row">
@@ -1139,7 +961,7 @@ Contract functions use: project.blockchain_id`}</code>
                 rel="noreferrer"
                 className="rounded-xl bg-blue-600 px-6 py-3 text-sm font-bold text-white transition hover:bg-blue-500"
               >
-                Open PayNode
+                Launch App
               </a>
 
               <a
@@ -1148,24 +970,31 @@ Contract functions use: project.blockchain_id`}</code>
                 rel="noreferrer"
                 className="rounded-xl border border-slate-700 bg-slate-950/50 px-6 py-3 text-sm font-bold text-slate-200 transition hover:border-slate-600 hover:bg-slate-900"
               >
-                Explore the code
+                Technical Details
               </a>
             </div>
           </section>
 
           <footer className="border-t border-slate-800 py-8">
             <div className="flex flex-col items-center justify-between gap-4 text-center md:flex-row md:text-left">
-              <div>
-                <p className="font-bold text-white">PayNode</p>
+              <div className="flex items-center gap-3">
+                <PayNodeLogo className="h-10 w-10" />
 
-                <p className="mt-1 text-sm text-slate-500">
-                  USDC escrow and reputation infrastructure for Web3
-                  collaboration.
-                </p>
+                <div>
+                  <p className="font-bold text-white">
+                    PayNode
+                  </p>
+
+                  <p className="mt-1 text-sm text-slate-500">
+                    Fair escrow and reputation for Web3
+                    collaboration.
+                  </p>
+                </div>
               </div>
 
               <div className="text-sm text-slate-500">
-                Built on Arc Network. Powered by USDC. Made for builders.
+                Built on Arc Network. Powered by USDC. Made for
+                builders and clients.
               </div>
             </div>
           </footer>
