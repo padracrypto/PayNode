@@ -164,6 +164,7 @@ export default function ProjectPage() {
   const [loading, setLoading] = useState(false);
   const [txStatus, setTxStatus] = useState(''); 
   const [timeLeft, setTimeLeft] = useState<string>('');
+  const [forceReleaseTimeLeft, setForceReleaseTimeLeft] = useState<string>('');
   
   const [showRatingModal, setShowRatingModal] = useState(false);
   const [selectedRating, setSelectedRating] = useState<number>(5);
@@ -206,6 +207,37 @@ export default function ProjectPage() {
 
     return () => clearInterval(timer);
   }, [project?.deadline]);
+
+  useEffect(() => {
+    if (!project?.delivered_at || project.status !== 'Delivered') return;
+
+    const releaseTimer = setInterval(() => {
+      const now = new Date().getTime();
+      const deliveredDate = new Date(project.delivered_at).getTime();
+      const releaseTime = deliveredDate + (7 * 24 * 60 * 60 * 1000); 
+      const distance = releaseTime - now;
+
+      if (distance < 0) {
+        setForceReleaseTimeLeft('Claim Now');
+        clearInterval(releaseTimer);
+        return;
+      }
+
+      const days = Math.floor(distance / (1000 * 60 * 60 * 24));
+      const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+      const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+
+      if (days > 0) {
+        setForceReleaseTimeLeft(`Available in ${days}d ${hours}h`);
+      } else if (hours > 0) {
+        setForceReleaseTimeLeft(`Available in ${hours}h ${minutes}m`);
+      } else {
+        setForceReleaseTimeLeft(`Available in ${minutes}m`);
+      }
+    }, 1000);
+
+    return () => clearInterval(releaseTimer);
+  }, [project?.delivered_at, project?.status]);
 
   useEffect(() => {
     if (isConfirmed && activeAction) {
@@ -548,7 +580,17 @@ export default function ProjectPage() {
             <p className="text-blue-400 font-mono font-bold text-lg">{project.budget} USDC</p>
           </div>
           <div className="bg-[#050B14] border border-slate-800/80 rounded-2xl p-5">
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Time Left</p>
+            
+            <div className="flex items-center gap-1.5 mb-2 group relative w-max">
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Time Left</p>
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4 cursor-help text-slate-500 transition-colors">
+                <path strokeLinecap="round" strokeLinejoin="round" d="m11.25 11.25.041-.02a.75.75 0 0 1 1.063.852l-.708 2.836a.75.75 0 0 0 1.063.853l.041-.021M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9-3.75h.008v.008H12V8.25Z" />
+              </svg>
+              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-64 p-3 bg-slate-800 border border-slate-700 text-xs text-white rounded-xl shadow-xl z-20 font-normal normal-case text-center pointer-events-none">
+                This is the delivery deadline. If time runs out before the work is submitted, the client can reclaim the locked funds.
+              </div>
+            </div>
+
             <p className={`font-mono font-bold text-sm ${isPastDeadline ? 'text-red-400' : 'text-emerald-400'}`}>
               {timeLeft || 'Calculating...'}
             </p>
@@ -693,10 +735,24 @@ export default function ProjectPage() {
               )}
 
               {project.status === 'Delivered' && isBuilder && (
-                <div className="mt-6 pt-6 border-t border-slate-800/80 text-center">
-                  <p className="text-slate-400 mb-4 text-sm">Waiting for the client to review the work...</p>
-                  <button onClick={() => setShowRatingModal(true)} disabled={!isForceReleaseAvailable || loading} className={`w-full py-3 rounded-xl font-bold transition-all text-sm ${isForceReleaseAvailable ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-[0_0_15px_rgba(16,185,129,0.3)]' : 'bg-[#0f172a] border border-slate-800 text-slate-600 cursor-not-allowed'}`}>
-                    {loading ? txStatus : `Force Release ${isForceReleaseAvailable ? '' : '(Locked for 7 Days)'}`}
+                <div className="mt-6 pt-6 border-t border-slate-800/80 flex flex-col items-center">
+                  
+                  <div className="flex items-center gap-1.5 mb-4 group relative w-max">
+                    <p className="text-slate-400 text-sm">Waiting for the client to review the work...</p>
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4 cursor-help text-slate-500 transition-colors">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="m11.25 11.25.041-.02a.75.75 0 0 1 1.063.852l-.708 2.836a.75.75 0 0 0 1.063.853l.041-.021M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9-3.75h.008v.008H12V8.25Z" />
+                    </svg>
+                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-72 p-3 bg-slate-800 border border-slate-700 text-xs text-white rounded-xl shadow-xl z-20 font-normal normal-case text-center pointer-events-none">
+                      Review period is active. If the client takes no action before this timer ends, the builder becomes eligible to claim the funds.
+                    </div>
+                  </div>
+
+                  <button 
+                    onClick={executeReleaseFunds} 
+                    disabled={!isForceReleaseAvailable || loading} 
+                    className={`w-full py-3 rounded-xl font-bold transition-all text-sm ${isForceReleaseAvailable ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-[0_0_15px_rgba(16,185,129,0.3)]' : 'bg-[#0f172a] border border-slate-800 text-slate-500 cursor-not-allowed'}`}
+                  >
+                    {loading ? txStatus : (isForceReleaseAvailable ? 'Force Release (Claim Now)' : `Force Release (${forceReleaseTimeLeft || 'Calculating...'})`)}
                   </button>
                 </div>
               )}
