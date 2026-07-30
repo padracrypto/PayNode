@@ -15,7 +15,11 @@ export default function CreateProfilePage() {
   // Profile State
   const [username, setUsername] = useState('');
   const [aboutMe, setAboutMe] = useState('');
-  const [skills, setSkills] = useState('');
+  
+  // تغییرات جدید برای مهارت‌ها (آرایه و اینپوت جداگانه)
+  const [skills, setSkills] = useState<string[]>([]);
+  const [skillInput, setSkillInput] = useState('');
+  
   const [socials, setSocials] = useState({
     github: '',
     x: '',
@@ -32,7 +36,6 @@ export default function CreateProfilePage() {
 
   const fetchExistingProfile = async (userWallet: string) => {
     try {
-      // Ensure column names exactly match your Supabase schema
       const { data, error: fetchError } = await supabase
         .from('profiles')
         .select('username, "about me", skills, github, x, linkedin, website')
@@ -40,7 +43,6 @@ export default function CreateProfilePage() {
         .single();
 
       if (fetchError && fetchError.code !== 'PGRST116') {
-        // Ignore "Row not found" errors, log others
         console.error('Error fetching profile:', fetchError);
         return;
       }
@@ -48,7 +50,16 @@ export default function CreateProfilePage() {
       if (data) {
         setUsername(data.username || '');
         setAboutMe(data['about me'] || ''); 
-        setSkills(Array.isArray(data.skills) ? data.skills.join(', ') : data.skills || '');
+        
+        // هندل کردن دیتای مهارت‌ها از دیتابیس
+        let normalizedSkills: string[] = [];
+        if (Array.isArray(data.skills)) {
+          normalizedSkills = data.skills;
+        } else if (typeof data.skills === 'string' && data.skills) {
+          normalizedSkills = data.skills.split(',').map((s: string) => s.trim()).filter(Boolean);
+        }
+        setSkills(normalizedSkills);
+
         setSocials({
           github: data.github || '',
           x: data.x || '', 
@@ -59,6 +70,23 @@ export default function CreateProfilePage() {
     } catch (err) {
       console.error('Unexpected error fetching profile:', err);
     }
+  };
+
+  // تابع اضافه کردن مهارت با دکمه Enter
+  const handleAddSkill = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault();
+      const newSkill = skillInput.trim();
+      if (newSkill && !skills.includes(newSkill)) {
+        setSkills([...skills, newSkill]);
+      }
+      setSkillInput('');
+    }
+  };
+
+  // تابع حذف مهارت با کلیک روی ضربدر
+  const removeSkill = (skillToRemove: string) => {
+    setSkills(skills.filter(s => s !== skillToRemove));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -72,17 +100,11 @@ export default function CreateProfilePage() {
     setError('');
 
     try {
-      // Clean up skills array to avoid empty strings like [""]
-      const skillsArray = skills
-        .split(',')
-        .map(s => s.trim())
-        .filter(s => s !== '');
-
       const { error: updateError } = await supabase
         .from('profiles')
         .update({
           "about me": aboutMe,
-          skills: skillsArray,
+          skills: skills,
           github: socials.github,
           x: socials.x,
           linkedin: socials.linkedin,
@@ -159,15 +181,28 @@ export default function CreateProfilePage() {
               />
             </div>
 
+            {/* بخش جدید UI برای تگ‌های مهارت */}
             <div className="space-y-2">
-              <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Skills (Comma Separated)</label>
-              <input 
-                type="text" 
-                value={skills}
-                onChange={(e) => setSkills(e.target.value)}
-                placeholder="e.g. Next.js, Solidity, Security Audit"
-                className="w-full bg-[#050B14] border border-slate-700/50 rounded-xl px-4 py-3 text-slate-300 text-sm focus:outline-none focus:border-blue-500/50 transition-all"
-              />
+              <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Skills</label>
+              <div className="w-full bg-[#050B14] border border-slate-700/50 rounded-xl p-3 flex flex-wrap gap-2 items-center min-h-[56px] focus-within:border-blue-500/50 transition-all">
+                {skills.map((skill, index) => (
+                  <span key={index} className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-900/30 text-blue-400 border border-blue-800/50 rounded-lg text-sm font-bold">
+                    {skill}
+                    <button type="button" onClick={() => removeSkill(skill)} className="text-blue-400 hover:text-white transition-colors">
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4"><path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" /></svg>
+                    </button>
+                  </span>
+                ))}
+                <input
+                  type="text"
+                  value={skillInput}
+                  onChange={(e) => setSkillInput(e.target.value)}
+                  onKeyDown={handleAddSkill}
+                  placeholder={skills.length === 0 ? "Type a skill and press Enter..." : "Add another skill..."}
+                  className="flex-1 bg-transparent text-slate-300 text-sm outline-none min-w-[150px] py-1 px-2 placeholder:text-slate-600"
+                />
+              </div>
+              <p className="text-xs text-slate-500 mt-2">Press <kbd className="bg-slate-800 border border-slate-700 px-1.5 py-0.5 rounded text-[10px] text-slate-300">Enter</kbd> to add a skill.</p>
             </div>
 
             <div className="space-y-4 pt-2">
