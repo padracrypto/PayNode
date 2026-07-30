@@ -14,6 +14,8 @@ export default function UserSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [profile, setProfile] = useState<any>(null);
+  
+  const [skillInput, setSkillInput] = useState('');
 
   useEffect(() => {
     setMounted(true);
@@ -36,9 +38,33 @@ export default function UserSettingsPage() {
       .maybeSingle();
       
     if (data) {
-      setProfile(data);
+      let normalizedSkills = [];
+      if (Array.isArray(data.skills)) {
+        normalizedSkills = data.skills;
+      } else if (typeof data.skills === 'string') {
+        normalizedSkills = data.skills.split(',').map((s: string) => s.trim()).filter(Boolean);
+      }
+      setProfile({ ...data, skills: normalizedSkills });
     }
     setLoading(false);
+  };
+
+  const handleAddSkill = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault();
+      const newSkill = skillInput.trim();
+      if (newSkill && !profile.skills?.includes(newSkill)) {
+        setProfile({ ...profile, skills: [...(profile.skills || []), newSkill] });
+      }
+      setSkillInput('');
+    }
+  };
+
+  const removeSkill = (skillToRemove: string) => {
+    setProfile({
+      ...profile,
+      skills: profile.skills.filter((s: string) => s !== skillToRemove)
+    });
   };
 
   const handleUpdate = async (e: React.FormEvent) => {
@@ -50,6 +76,7 @@ export default function UserSettingsPage() {
       .from('profiles')
       .update({
         "about me": profile['about me'],
+        skills: profile.skills,
         github: profile.github,
         x: profile.x,
         linkedin: profile.linkedin,
@@ -60,7 +87,6 @@ export default function UserSettingsPage() {
     setSaving(false);
     
     if (!error) {
-      // هدایت کاربر به پروفایل عمومی خودش بعد از آپدیت موفق
       router.push(`/${profile.username}`);
     } else {
       console.error("Update error:", error);
@@ -103,7 +129,30 @@ export default function UserSettingsPage() {
             <textarea value={profile['about me'] || ''} onChange={(e) => setProfile({...profile, 'about me': e.target.value})} className="w-full bg-[#050B14] border border-slate-700/50 rounded-xl px-5 py-4 text-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all resize-none" rows={4} />
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-slate-800/50">
+          <div className="pt-2">
+            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block">Skills</label>
+            <div className="bg-[#050B14] border border-slate-700/50 rounded-xl p-3 flex flex-wrap gap-2 items-center min-h-[56px] focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500 transition-all">
+              {profile.skills?.map((skill: string, index: number) => (
+                <span key={index} className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-900/30 text-blue-400 border border-blue-800/50 rounded-lg text-sm font-bold">
+                  {skill}
+                  <button type="button" onClick={() => removeSkill(skill)} className="text-blue-400 hover:text-white transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4"><path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" /></svg>
+                  </button>
+                </span>
+              ))}
+              <input
+                type="text"
+                value={skillInput}
+                onChange={(e) => setSkillInput(e.target.value)}
+                onKeyDown={handleAddSkill}
+                placeholder={profile.skills?.length === 0 ? "Type a skill and press Enter..." : "Add another skill..."}
+                className="flex-1 bg-transparent text-white text-sm outline-none min-w-[150px] py-1 px-2 placeholder:text-slate-600"
+              />
+            </div>
+            <p className="text-xs text-slate-500 mt-2">Press <kbd className="bg-slate-800 border border-slate-700 px-1.5 py-0.5 rounded text-[10px] text-slate-300">Enter</kbd> to add a skill.</p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-6 border-t border-slate-800/50 mt-4">
             <div>
               <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block">GitHub</label>
               <input type="url" value={profile.github || ''} onChange={(e) => setProfile({...profile, github: e.target.value})} className="w-full bg-[#050B14] border border-slate-700/50 rounded-xl px-5 py-3 text-white text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all" />
