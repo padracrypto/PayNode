@@ -7,10 +7,18 @@ import { useAccount, useWriteContract, useWaitForTransactionReceipt } from 'wagm
 import { parseUnits } from 'viem';
 import { supabase } from '../../lib/supabase';
 
+// Updated ABI directly from Remix
 const ESCROW_ABI = [
   {
     "inputs": [{"internalType": "uint256","name": "_projectId","type": "uint256"}],
     "name": "cancelProject",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [{"internalType": "uint256","name": "_projectId","type": "uint256"}],
+    "name": "claimByBuilder",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
@@ -63,10 +71,15 @@ const ESCROW_ABI = [
     "type": "event"
   },
   {
+    "inputs": [{"internalType": "uint256","name": "_projectId","type": "uint256"}],
+    "name": "markDelivered",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
     "anonymous": false,
-    "inputs": [
-      {"indexed": true,"internalType": "uint256","name": "projectId","type": "uint256"}
-    ],
+    "inputs": [{"indexed": true,"internalType": "uint256","name": "projectId","type": "uint256"}],
     "name": "ProjectCancelled",
     "type": "event"
   },
@@ -124,6 +137,15 @@ const ESCROW_ABI = [
     "type": "event"
   },
   {
+    "anonymous": false,
+    "inputs": [
+      {"indexed": true,"internalType": "uint256","name": "projectId","type": "uint256"},
+      {"indexed": false,"internalType": "uint256","name": "deliveredAt","type": "uint256"}
+    ],
+    "name": "WorkDelivered",
+    "type": "event"
+  },
+  {
     "inputs": [],
     "name": "projectCounter",
     "outputs": [{"internalType": "uint256","name": "","type": "uint256"}],
@@ -141,14 +163,16 @@ const ESCROW_ABI = [
       {"internalType": "uint8","name": "maxRevisions","type": "uint8"},
       {"internalType": "uint8","name": "revisionsUsed","type": "uint8"},
       {"internalType": "enum PayNodeEscrow.ProjectStatus","name": "status","type": "uint8"},
-      {"internalType": "bool","name": "isFunded","type": "bool"}
+      {"internalType": "bool","name": "isFunded","type": "bool"},
+      {"internalType": "uint256","name": "deliveredAt","type": "uint256"}
     ],
     "stateMutability": "view",
     "type": "function"
   }
 ] as const;
 
-const ESCROW_CONTRACT_ADDRESS = '0x66B1fC10D5Ab5846EFdd632E331dBd4EB2B43a39';
+// The New Contract Address
+const ESCROW_CONTRACT_ADDRESS = '0x5BaaED98bc16692644b9a74ffa690cE46EfA33D4';
 
 export default function ProjectPage() {
   const { id } = useParams();
@@ -304,9 +328,17 @@ export default function ProjectPage() {
         await updateProjectStatus('Funded'); 
         await sendNotification(project.builder, `Client has funded "${project.title}". You can start working now!`, 'PROJECT_FUNDED');
         break;
+      case 'Delivered':
+        await updateProjectStatus('Delivered', { delivery_notes: deliveryData.notes, delivery_links: deliveryData.links, delivered_at: new Date().toISOString() });
+        await sendNotification(project.client, `Builder has delivered the work for "${project.title}". Please review it.`, 'WORK_DELIVERED');
+        break;
       case 'Completed': 
         await updateProjectStatus('Completed', { rating: selectedRating }); 
         await sendNotification(project.builder, `Funds released! Client approved your work for "${project.title}".`, 'PROJECT_FUNDED');
+        break;
+      case 'ForceCompleted': 
+        await updateProjectStatus('Completed'); 
+        await sendNotification(project.client, `Builder claimed the funds for "${project.title}" after the 7-day review period expired.`, 'PROJECT_FUNDED');
         break;
       case 'Refunded': 
         await updateProjectStatus('Refunded'); 
@@ -364,6 +396,22 @@ export default function ProjectPage() {
       address: ESCROW_CONTRACT_ADDRESS,
       abi: ESCROW_ABI,
       functionName: 'releaseFunds',
+      args: [BigInt(project.blockchain_id)]
+    });
+  };
+
+  const forceClaimFunds = async () => {
+    if (project.blockchain_id == null) {
+      alert("Error: Blockchain ID is missing.");
+      return;
+    }
+    setLoading(true); 
+    setTxStatus('Claiming Funds...');
+    setActiveAction('ForceCompleted'); 
+    writeContract({
+      address: ESCROW_CONTRACT_ADDRESS,
+      abi: ESCROW_ABI,
+      functionName: 'claimByBuilder',
       args: [BigInt(project.blockchain_id)]
     });
   };
@@ -439,11 +487,20 @@ export default function ProjectPage() {
 
   const deliverWork = async () => {
     if (!deliveryData.links) return alert("Provide links.");
+    if (project.blockchain_id == null) {
+      alert("Error: Blockchain ID is missing.");
+      return;
+    }
     setLoading(true);
-    setTxStatus('Submitting Work...');
-    await updateProjectStatus('Delivered', { delivery_notes: deliveryData.notes, delivery_links: deliveryData.links, delivered_at: new Date().toISOString() });
-    await sendNotification(project.client, `Builder has delivered the work for "${project.title}". Please review it.`, 'WORK_DELIVERED');
-    setLoading(false);
+    setTxStatus('Recording Delivery on Blockchain...');
+    setActiveAction('Delivered');
+    
+    writeContract({
+      address: ESCROW_CONTRACT_ADDRESS,
+      abi: ESCROW_ABI,
+      functionName: 'markDelivered',
+      args: [BigInt(project.blockchain_id)]
+    });
   };
 
   if (!project) return (
@@ -607,7 +664,7 @@ export default function ProjectPage() {
              </div>
           )}
 
-          {project.status === 'Funded' && isPastDeadline && isClient && (
+          {(project.status === 'Funded' || project.status === 'Revision') && isPastDeadline && isClient && (
             <div className="bg-red-950/20 border border-red-900/50 p-6 rounded-2xl flex items-center justify-between">
                <div>
                  <h3 className="text-red-400 font-bold mb-1">Deadline Passed</h3>
@@ -679,7 +736,7 @@ export default function ProjectPage() {
                 onChange={e => setDeliveryData({...deliveryData, links: e.target.value})} 
               />
               <button onClick={deliverWork} disabled={loading} className="w-full bg-purple-600 hover:bg-purple-500 text-white py-4 rounded-xl font-bold transition-all shadow-[0_0_20px_-5px_rgba(168,85,247,0.4)] mb-6">
-                {loading && txStatus === 'Submitting Work...' ? txStatus : 'Submit Delivery'}
+                {loading && txStatus === 'Recording Delivery on Blockchain...' ? txStatus : 'Submit Delivery'}
               </button>
               
               <div className="border-t border-slate-800 pt-6 text-center">
@@ -748,11 +805,11 @@ export default function ProjectPage() {
                   </div>
 
                   <button 
-                    onClick={executeReleaseFunds} 
+                    onClick={forceClaimFunds} 
                     disabled={!isForceReleaseAvailable || loading} 
                     className={`w-full py-3 rounded-xl font-bold transition-all text-sm ${isForceReleaseAvailable ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-[0_0_15px_rgba(16,185,129,0.3)]' : 'bg-[#0f172a] border border-slate-800 text-slate-500 cursor-not-allowed'}`}
                   >
-                    {loading ? txStatus : (isForceReleaseAvailable ? 'Force Release (Claim Now)' : `Force Release (${forceReleaseTimeLeft || 'Calculating...'})`)}
+                    {loading && txStatus === 'Claiming Funds...' ? txStatus : (isForceReleaseAvailable ? 'Force Release (Claim Now)' : `Force Release (${forceReleaseTimeLeft || 'Calculating...'})`)}
                   </button>
                 </div>
               )}

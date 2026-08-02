@@ -1,6 +1,7 @@
 # PayNode - Decentralized Escrow & Milestone Platform
 
-🚀 **Live Platform:** [paynode.online](https://paynode.online)
+🚀 **Live Platform:** [paynode.online](https://paynode.online)  
+📚 **Documentation:** [Read the PayNode Docs](https://docs.paynode.online/)
 
 PayNode is a next-generation peer-to-peer escrow platform built for the **Build on Arc** developer program. It provides secure, transparent, and trustless transactions for developers, clients, and freelancers leveraging the high-speed and low-cost capabilities of the Arc network.
 
@@ -8,7 +9,9 @@ PayNode is a next-generation peer-to-peer escrow platform built for the **Build 
 
 ## 🚀 Key Features
 
-* **Smart Contract Escrow:** Fully transparent smart contracts deployed and verified on Arc Testnet, ensuring funds are safely locked until milestone completion.
+* **Smart Contract Escrow:** Fully transparent smart contracts deployed on Arc Testnet, ensuring funds are safely locked until work is delivered and approved.
+* **7-Day Auto-Claim (Force Release):** Built-in decentralized protection for builders. If a client goes unresponsive after work delivery, builders can securely claim their funds on-chain after a 7-day review period.
+* **Direct Web3 Tips:** A zero-platform-fee, direct tipping mechanism allowing clients to instantly reward builders via the Arc network without interacting with the core escrow lock.
 * **Smart User Routing:** Intelligent client-side navigation that seamlessly directs users to their onboarding flows or personalized dashboards based on Supabase database profiles.
 * **Real-Time Notifications:** Instant notification system powered by Supabase real-time channels to keep users updated on transaction statuses and milestone approvals.
 * **Web3 Integration:** Native wallet connection using Wagmi and RainbowKit tailored for the Arc network ecosystem.
@@ -19,8 +22,8 @@ PayNode is a next-generation peer-to-peer escrow platform built for the **Build 
 ## 📋 Smart Contract Details
 
 * **Network:** Arc Testnet
-* **Contract Address:** `0x66B1fC10D5Ab5846EFdd632E331dBd4EB2B43a39`
-* **Status:** Verified on ArcScan (v0.8.24)
+* **Contract Address:** `0x5BaaED98bc16692644b9a74ffa690cE46EfA33D4`
+* **Solidity Version:** `v0.8.34`
 
 ---
 
@@ -35,6 +38,7 @@ PayNode is a next-generation peer-to-peer escrow platform built for the **Build 
 
 ## ⚙️ Getting Started Locally
 
-1. Clone the repository:
+1. **Clone the repository:**
    ```bash
-   git clone [https://github.com/YOUR_USERNAME/YOUR_NEW_REPO_NAME.git](https://github.com/padracrypto/PayNode.git)
+   git clone [https://github.com/padracrypto/PayNode.git](https://github.com/padracrypto/PayNode.git)
+   cd PayNode

@@ -36,9 +36,6 @@ export default function DashboardPage() {
   
   const [totalTips, setTotalTips] = useState<number>(0);
   const [recentTips, setRecentTips] = useState<Tip[]>([]);
-  
-  const [showAllPast, setShowAllPast] = useState(false);
-  const [showAllTips, setShowAllTips] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -84,6 +81,7 @@ export default function DashboardPage() {
           p.builder?.toLowerCase() === userWallet.toLowerCase()
       );
 
+      // مرتب‌سازی دقیق: جدیدترین‌ها (تاریخ‌های بزرگتر) میان اول لیست
       userProjects.sort((a, b) => {
         const dateA = a.created_at ? new Date(a.created_at).getTime() : 0;
         const dateB = b.created_at ? new Date(b.created_at).getTime() : 0;
@@ -101,6 +99,7 @@ export default function DashboardPage() {
           (t) => t.receiver_wallet?.toLowerCase() === userWallet.toLowerCase()
         );
         
+        // مرتب‌سازی تیپ‌ها از جدیدترین به قدیمی‌ترین
         userTips.sort((a, b) => {
           const dateA = a.created_at ? new Date(a.created_at).getTime() : 0;
           const dateB = b.created_at ? new Date(b.created_at).getTime() : 0;
@@ -128,11 +127,11 @@ export default function DashboardPage() {
   const activeProjects = projects.filter(p => activeStatuses.includes(p.status));
   const pastProjects = projects.filter(p => !activeStatuses.includes(p.status));
   
-  const visiblePastProjects = showAllPast ? pastProjects : pastProjects.slice(0, 3);
-  const visibleTips = showAllTips ? recentTips : recentTips.slice(0, 3);
-  
   const activeContractsCount = activeProjects.length;
   const totalLockedAmount = activeProjects.reduce((sum, p) => sum + Number(p.budget || 0), 0);
+
+  // استایل اسکرول‌بار کاستوم شده برای تلوایند
+  const scrollbarClasses = "max-h-[380px] overflow-y-auto pr-3 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-slate-700 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-slate-600";
 
   return (
     <div className="flex-1 w-full max-w-7xl mx-auto px-6 py-10 text-slate-300">
@@ -195,6 +194,7 @@ export default function DashboardPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 space-y-10">
+          
           <div className="space-y-6">
             <h2 className="text-xl font-black text-white flex items-center gap-2">
               <div className="w-2 h-6 bg-blue-500 rounded-full"></div>
@@ -211,33 +211,35 @@ export default function DashboardPage() {
                 <p className="text-slate-500 text-sm">When you start a project or get hired, your contracts will appear here.</p>
               </div>
             ) : (
-              activeProjects.map((project) => (
-                <div key={project.id} className="bg-[#050B14] border border-slate-800 rounded-3xl p-6 hover:border-slate-700 transition-colors">
-                  <div className="flex justify-between items-start mb-4">
-                    <div>
-                      <h3 className="text-lg font-bold text-white mb-1">{project.title}</h3>
-                      <p className="text-sm text-slate-500 flex items-center gap-2">
-                        Role: <span className="text-blue-400 font-mono">
-                          {project.client?.toLowerCase() === address?.toLowerCase() ? 'Client' : 'Builder'}
-                        </span>
-                      </p>
+              <div className={`space-y-4 ${scrollbarClasses}`}>
+                {activeProjects.map((project) => (
+                  <div key={project.id} className="bg-[#050B14] border border-slate-800 rounded-3xl p-6 hover:border-slate-700 transition-colors">
+                    <div className="flex justify-between items-start mb-4">
+                      <div>
+                        <h3 className="text-lg font-bold text-white mb-1">{project.title}</h3>
+                        <p className="text-sm text-slate-500 flex items-center gap-2">
+                          Role: <span className="text-blue-400 font-mono">
+                            {project.client?.toLowerCase() === address?.toLowerCase() ? 'Client' : 'Builder'}
+                          </span>
+                        </p>
+                      </div>
+                      <div className="px-3 py-1 rounded-full bg-blue-900/30 border border-blue-800/50 text-blue-400 text-xs font-bold uppercase tracking-wider">
+                        {project.status}
+                      </div>
                     </div>
-                    <div className="px-3 py-1 rounded-full bg-blue-900/30 border border-blue-800/50 text-blue-400 text-xs font-bold uppercase tracking-wider">
-                      {project.status}
+                    
+                    <div className="flex items-center justify-between pt-4 border-t border-slate-800/50">
+                      <div>
+                        <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Locked Amount</p>
+                        <p className="text-lg font-black text-white">${project.budget} USDC</p>
+                      </div>
+                      <Link href={`/project/${project.id}`} className="text-sm text-slate-400 hover:text-white font-bold transition-colors">
+                        View Details →
+                      </Link>
                     </div>
                   </div>
-                  
-                  <div className="flex items-center justify-between pt-4 border-t border-slate-800/50">
-                    <div>
-                      <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Locked Amount</p>
-                      <p className="text-lg font-black text-white">${project.budget} USDC</p>
-                    </div>
-                    <Link href={`/project/${project.id}`} className="text-sm text-slate-400 hover:text-white font-bold transition-colors">
-                      View Details →
-                    </Link>
-                  </div>
-                </div>
-              ))
+                ))}
+              </div>
             )}
           </div>
 
@@ -248,44 +250,35 @@ export default function DashboardPage() {
                 Completed & Past Contracts
               </h2>
 
-              {visiblePastProjects.map((project) => (
-                <div key={project.id} className="bg-[#050B14]/60 border border-slate-800/60 rounded-3xl p-6 hover:border-slate-700 transition-colors">
-                  <div className="flex justify-between items-start mb-4">
-                    <div>
-                      <h3 className="text-lg font-bold text-slate-200 mb-1">{project.title}</h3>
-                      <p className="text-sm text-slate-500 flex items-center gap-2">
-                        Role: <span className="text-slate-400 font-mono">
-                          {project.client?.toLowerCase() === address?.toLowerCase() ? 'Client' : 'Builder'}
-                        </span>
-                      </p>
+              <div className={`space-y-4 ${scrollbarClasses}`}>
+                {pastProjects.map((project) => (
+                  <div key={project.id} className="bg-[#050B14]/60 border border-slate-800/60 rounded-3xl p-6 hover:border-slate-700 transition-colors">
+                    <div className="flex justify-between items-start mb-4">
+                      <div>
+                        <h3 className="text-lg font-bold text-slate-200 mb-1">{project.title}</h3>
+                        <p className="text-sm text-slate-500 flex items-center gap-2">
+                          Role: <span className="text-slate-400 font-mono">
+                            {project.client?.toLowerCase() === address?.toLowerCase() ? 'Client' : 'Builder'}
+                          </span>
+                        </p>
+                      </div>
+                      <div className="px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider border bg-emerald-950/40 border-emerald-900/50 text-emerald-400">
+                        {project.status}
+                      </div>
                     </div>
-                    <div className="px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider border bg-emerald-950/40 border-emerald-900/50 text-emerald-400">
-                      {project.status}
+                    
+                    <div className="flex items-center justify-between pt-4 border-t border-slate-800/40">
+                      <div>
+                        <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Final Budget</p>
+                        <p className="text-lg font-black text-slate-300">${project.budget} USDC</p>
+                      </div>
+                      <Link href={`/project/${project.id}`} className="text-sm text-blue-400 hover:text-blue-300 font-bold transition-colors">
+                        View Record →
+                      </Link>
                     </div>
                   </div>
-                  
-                  <div className="flex items-center justify-between pt-4 border-t border-slate-800/40">
-                    <div>
-                      <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Final Budget</p>
-                      <p className="text-lg font-black text-slate-300">${project.budget} USDC</p>
-                    </div>
-                    <Link href={`/project/${project.id}`} className="text-sm text-blue-400 hover:text-blue-300 font-bold transition-colors">
-                      View Record →
-                    </Link>
-                  </div>
-                </div>
-              ))}
-
-              {pastProjects.length > 3 && (
-                <div className="text-center pt-2">
-                  <button 
-                    onClick={() => setShowAllPast(!showAllPast)}
-                    className="px-6 py-2.5 rounded-xl border border-slate-700 text-slate-400 hover:text-white hover:bg-slate-800 transition-all text-sm font-bold"
-                  >
-                    {showAllPast ? 'Show Less' : `View All Past Contracts (${pastProjects.length})`}
-                  </button>
-                </div>
-              )}
+                ))}
+              </div>
             </div>
           )}
         </div>
@@ -299,8 +292,8 @@ export default function DashboardPage() {
             {isLoading ? (
               <p className="text-slate-500 text-sm text-center">Loading tips...</p>
             ) : recentTips.length > 0 ? (
-              <div className="space-y-4">
-                {visibleTips.map((tip) => (
+              <div className={`space-y-4 ${scrollbarClasses}`}>
+                {recentTips.map((tip) => (
                   <div key={tip.id} className="bg-[#050B14]/80 border border-slate-800/80 rounded-2xl p-4 hover:border-slate-700 transition-colors">
                     <div className="flex justify-between items-center mb-2">
                       <span className="text-xs font-mono text-slate-400" title={tip.sender_wallet}>
@@ -320,17 +313,6 @@ export default function DashboardPage() {
                     </div>
                   </div>
                 ))}
-                
-                {recentTips.length > 3 && (
-                  <div className="text-center pt-4 border-t border-slate-800/50 mt-2">
-                    <button 
-                      onClick={() => setShowAllTips(!showAllTips)}
-                      className="w-full px-6 py-2.5 rounded-xl border border-slate-700 text-slate-400 hover:text-white hover:bg-slate-800 transition-all text-sm font-bold"
-                    >
-                      {showAllTips ? 'Show Less' : `View All Tips (${recentTips.length})`}
-                    </button>
-                  </div>
-                )}
               </div>
             ) : (
               <p className="text-slate-500 text-sm text-center py-4">No tips received yet.</p>

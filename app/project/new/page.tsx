@@ -6,12 +6,21 @@ import { useAccount, useWriteContract, useWaitForTransactionReceipt, usePublicCl
 import { parseUnits, decodeEventLog } from 'viem';
 import { supabase } from '../../lib/supabase'; 
 
-const ESCROW_CONTRACT_ADDRESS = '0x66B1fC10D5Ab5846EFdd632E331dBd4EB2B43a39';
+// The New Contract Address
+const ESCROW_CONTRACT_ADDRESS = '0x5BaaED98bc16692644b9a74ffa690cE46EfA33D4';
 
+// Updated ABI
 const ESCROW_ABI = [
   {
     "inputs": [{"internalType": "uint256","name": "_projectId","type": "uint256"}],
     "name": "cancelProject",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [{"internalType": "uint256","name": "_projectId","type": "uint256"}],
+    "name": "claimByBuilder",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
@@ -31,20 +40,134 @@ const ESCROW_ABI = [
   {
     "anonymous": false,
     "inputs": [
-      {"indexed": true, "internalType": "uint256", "name": "projectId", "type": "uint256"},
-      {"indexed": true, "internalType": "address", "name": "client", "type": "address"},
-      {"indexed": true, "internalType": "address", "name": "builder", "type": "address"},
-      {"indexed": false, "internalType": "uint256", "name": "amount", "type": "uint256"},
-      {"indexed": false, "internalType": "uint256", "name": "deadline", "type": "uint256"},
-      {"indexed": false, "internalType": "uint8", "name": "maxRevisions", "type": "uint8"}
+      {"indexed": true,"internalType": "uint256","name": "projectId","type": "uint256"},
+      {"indexed": false,"internalType": "address","name": "raisedBy","type": "address"}
+    ],
+    "name": "DisputeRaised",
+    "type": "event"
+  },
+  {
+    "inputs": [{"internalType": "uint256","name": "_projectId","type": "uint256"}],
+    "name": "fundProject",
+    "outputs": [],
+    "stateMutability": "payable",
+    "type": "function"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {"indexed": true,"internalType": "uint256","name": "projectId","type": "uint256"},
+      {"indexed": false,"internalType": "uint256","name": "amount","type": "uint256"}
+    ],
+    "name": "FundsLocked",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {"indexed": true,"internalType": "uint256","name": "projectId","type": "uint256"},
+      {"indexed": true,"internalType": "address","name": "builder","type": "address"},
+      {"indexed": false,"internalType": "uint256","name": "amount","type": "uint256"}
+    ],
+    "name": "FundsReleased",
+    "type": "event"
+  },
+  {
+    "inputs": [{"internalType": "uint256","name": "_projectId","type": "uint256"}],
+    "name": "markDelivered",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "anonymous": false,
+    "inputs": [{"indexed": true,"internalType": "uint256","name": "projectId","type": "uint256"}],
+    "name": "ProjectCancelled",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {"indexed": true,"internalType": "uint256","name": "projectId","type": "uint256"},
+      {"indexed": true,"internalType": "address","name": "client","type": "address"},
+      {"indexed": true,"internalType": "address","name": "builder","type": "address"},
+      {"indexed": false,"internalType": "uint256","name": "amount","type": "uint256"},
+      {"indexed": false,"internalType": "uint256","name": "deadline","type": "uint256"},
+      {"indexed": false,"internalType": "uint8","name": "maxRevisions","type": "uint8"}
     ],
     "name": "ProjectCreated",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {"indexed": true,"internalType": "uint256","name": "projectId","type": "uint256"},
+      {"indexed": true,"internalType": "address","name": "client","type": "address"},
+      {"indexed": false,"internalType": "uint256","name": "amount","type": "uint256"}
+    ],
+    "name": "ProjectRefunded",
+    "type": "event"
+  },
+  {
+    "inputs": [{"internalType": "uint256","name": "_projectId","type": "uint256"}],
+    "name": "raiseDispute",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [{"internalType": "uint256","name": "_projectId","type": "uint256"}],
+    "name": "releaseFunds",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [{"internalType": "uint256","name": "_projectId","type": "uint256"}],
+    "name": "requestRevision",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {"indexed": true,"internalType": "uint256","name": "projectId","type": "uint256"},
+      {"indexed": false,"internalType": "uint8","name": "revisionsLeft","type": "uint8"}
+    ],
+    "name": "RevisionRequested",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {"indexed": true,"internalType": "uint256","name": "projectId","type": "uint256"},
+      {"indexed": false,"internalType": "uint256","name": "deliveredAt","type": "uint256"}
+    ],
+    "name": "WorkDelivered",
     "type": "event"
   },
   {
     "inputs": [],
     "name": "projectCounter",
     "outputs": [{"internalType": "uint256","name": "","type": "uint256"}],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [{"internalType": "uint256","name": "","type": "uint256"}],
+    "name": "projects",
+    "outputs": [
+      {"internalType": "address payable","name": "client","type": "address"},
+      {"internalType": "address payable","name": "builder","type": "address"},
+      {"internalType": "uint256","name": "amount","type": "uint256"},
+      {"internalType": "uint256","name": "deadline","type": "uint256"},
+      {"internalType": "uint8","name": "maxRevisions","type": "uint8"},
+      {"internalType": "uint8","name": "revisionsUsed","type": "uint8"},
+      {"internalType": "enum PayNodeEscrow.ProjectStatus","name": "status","type": "uint8"},
+      {"internalType": "bool","name": "isFunded","type": "bool"},
+      {"internalType": "uint256","name": "deliveredAt","type": "uint256"}
+    ],
     "stateMutability": "view",
     "type": "function"
   }

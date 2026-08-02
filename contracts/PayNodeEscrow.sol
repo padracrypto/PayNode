@@ -7,24 +7,26 @@ contract PayNodeEscrow {
     // ENUMS & STRUCTS
     // ==========================================
     enum ProjectStatus {
-        AwaitingFunds, // Waiting for deposit
-        Funded,        // Funded and actively building
-        InRevision,    // Under revision by the builder
-        Completed,     // Finished and funds released
-        Disputed,      // Dispute raised, requires platform moderation
-        Cancelled,     // Cancelled before funding
-        Refunded       // Cancelled and funds returned to the client
+        AwaitingFunds, // 0: Waiting for deposit
+        Funded,        // 1: Funded and actively building
+        InRevision,    // 2: Under revision by the builder
+        Completed,     // 3: Finished and funds released
+        Disputed,      // 4: Dispute raised, requires platform moderation
+        Cancelled,     // 5: Cancelled before funding
+        Refunded,      // 6: Cancelled and funds returned to the client
+        Delivered      // 7: Work delivered, waiting for client review
     }
 
     struct Project {
         address payable client;
         address payable builder;
         uint256 amount;
-        uint256 deadline;       // Unix timestamp for project deadline
-        uint8 maxRevisions;     // Maximum allowed revisions
-        uint8 revisionsUsed;    // Revisions used so far
+        uint256 deadline;       
+        uint8 maxRevisions;     
+        uint8 revisionsUsed;    
         ProjectStatus status;
         bool isFunded;
+        uint256 deliveredAt;
     }
 
     // ==========================================
@@ -43,6 +45,7 @@ contract PayNodeEscrow {
     event ProjectRefunded(uint256 indexed projectId, address indexed client, uint256 amount);
     event RevisionRequested(uint256 indexed projectId, uint8 revisionsLeft);
     event DisputeRaised(uint256 indexed projectId, address raisedBy);
+    event WorkDelivered(uint256 indexed projectId, uint256 deliveredAt);
 
     // ==========================================
     // MODIFIERS
@@ -66,7 +69,6 @@ contract PayNodeEscrow {
     // CORE FUNCTIONS
     // ==========================================
 
-    // 1. Create a new escrow project
     function createProject(
         address payable _builder, 
         uint256 _amount, 
@@ -89,14 +91,14 @@ contract PayNodeEscrow {
             maxRevisions: _maxRevisions,
             revisionsUsed: 0,
             status: ProjectStatus.AwaitingFunds,
-            isFunded: false
+            isFunded: false,
+            deliveredAt: 0
         });
 
         emit ProjectCreated(newProjectId, msg.sender, _builder, _amount, projects[newProjectId].deadline, _maxRevisions);
         return newProjectId;
     }
 
-    // 2. Client locks the funds in the contract
     function fundProject(uint256 _projectId) public payable onlyClient(_projectId) {
         Project storage project = projects[_projectId];
         
@@ -110,26 +112,48 @@ contract PayNodeEscrow {
         emit FundsLocked(_projectId, msg.value);
     }
 
-    // 3. Client approves the work and releases funds to the builder
+    function markDelivered(uint256 _projectId) public onlyBuilder(_projectId) {
+        Project storage project = projects[_projectId];
+        require(project.status == ProjectStatus.Funded || project.status == ProjectStatus.InRevision, "Project not in active state");
+        
+        project.status = ProjectStatus.Delivered;
+        project.deliveredAt = block.timestamp;
+
+        emit WorkDelivered(_projectId, project.deliveredAt);
+    }
+
     function releaseFunds(uint256 _projectId) public onlyClient(_projectId) {
         Project storage project = projects[_projectId];
-        require(project.status == ProjectStatus.Funded || project.status == ProjectStatus.InRevision, "Project not in valid state");
+        require(project.status == ProjectStatus.Funded || project.status == ProjectStatus.InRevision || project.status == ProjectStatus.Delivered, "Project not in valid state");
         require(project.isFunded, "No funds to release");
 
         project.status = ProjectStatus.Completed;
         project.isFunded = false; 
         
-        // اصلاح متد ترانسفر به سازنده
         (bool success, ) = project.builder.call{value: project.amount}("");
         require(success, "Transfer to builder failed");
         
         emit FundsReleased(_projectId, project.builder, project.amount);
     }
 
-    // 4. Client requests a revision
+    function claimByBuilder(uint256 _projectId) public onlyBuilder(_projectId) {
+        Project storage project = projects[_projectId];
+        require(project.status == ProjectStatus.Delivered, "Work must be delivered first");
+        require(project.isFunded, "No funds to release");
+        require(block.timestamp >= project.deliveredAt + 7 days, "7-day review period is not over yet");
+
+        project.status = ProjectStatus.Completed;
+        project.isFunded = false;
+
+        (bool success, ) = project.builder.call{value: project.amount}("");
+        require(success, "Transfer to builder failed");
+
+        emit FundsReleased(_projectId, project.builder, project.amount);
+    }
+
     function requestRevision(uint256 _projectId) public onlyClient(_projectId) {
         Project storage project = projects[_projectId];
-        require(project.status == ProjectStatus.Funded || project.status == ProjectStatus.InRevision, "Cannot request revision now");
+        require(project.status == ProjectStatus.Funded || project.status == ProjectStatus.InRevision || project.status == ProjectStatus.Delivered, "Cannot request revision now");
         require(project.revisionsUsed < project.maxRevisions, "Max revisions reached");
 
         project.revisionsUsed++;
@@ -138,33 +162,26 @@ contract PayNodeEscrow {
         emit RevisionRequested(_projectId, project.maxRevisions - project.revisionsUsed);
     }
 
-    // 5. Cancel project based on deadline and funding status
     function cancelProject(uint256 _projectId) public onlyParties(_projectId) {
         Project storage project = projects[_projectId];
         
         if (project.status == ProjectStatus.AwaitingFunds) {
-            // Both parties can cancel before any funds are locked
             project.status = ProjectStatus.Cancelled;
             emit ProjectCancelled(_projectId);
-
         } else if (project.status == ProjectStatus.Funded || project.status == ProjectStatus.InRevision) {
             if (msg.sender == project.client) {
-                // Client can unilaterally cancel and refund ONLY if the deadline has passed
                 require(block.timestamp > project.deadline, "Builder still has time");
                 project.status = ProjectStatus.Refunded;
                 project.isFunded = false;
                 
-                // اصلاح متد بازگشت وجه به کارفرما
                 (bool success, ) = project.client.call{value: project.amount}("");
                 require(success, "Transfer to client failed");
                 
                 emit ProjectRefunded(_projectId, project.client, project.amount);
             } else {
-                // Builder can cancel at any time to return funds to the client
                 project.status = ProjectStatus.Refunded;
                 project.isFunded = false;
                 
-                // اصلاح متد بازگشت وجه به کارفرما
                 (bool success, ) = project.client.call{value: project.amount}("");
                 require(success, "Transfer to client failed");
                 
@@ -175,10 +192,9 @@ contract PayNodeEscrow {
         }
     }
 
-    // 6. Raise a dispute to halt the process for platform moderation
     function raiseDispute(uint256 _projectId) public onlyParties(_projectId) {
         Project storage project = projects[_projectId];
-        require(project.status == ProjectStatus.Funded || project.status == ProjectStatus.InRevision, "Cannot dispute now");
+        require(project.status == ProjectStatus.Funded || project.status == ProjectStatus.InRevision || project.status == ProjectStatus.Delivered, "Cannot dispute now");
         
         project.status = ProjectStatus.Disputed;
         emit DisputeRaised(_projectId, msg.sender);
