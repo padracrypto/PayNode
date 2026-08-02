@@ -81,7 +81,6 @@ export default function DashboardPage() {
           p.builder?.toLowerCase() === userWallet.toLowerCase()
       );
 
-      // مرتب‌سازی دقیق: جدیدترین‌ها (تاریخ‌های بزرگتر) میان اول لیست
       userProjects.sort((a, b) => {
         const dateA = a.created_at ? new Date(a.created_at).getTime() : 0;
         const dateB = b.created_at ? new Date(b.created_at).getTime() : 0;
@@ -99,7 +98,6 @@ export default function DashboardPage() {
           (t) => t.receiver_wallet?.toLowerCase() === userWallet.toLowerCase()
         );
         
-        // مرتب‌سازی تیپ‌ها از جدیدترین به قدیمی‌ترین
         userTips.sort((a, b) => {
           const dateA = a.created_at ? new Date(a.created_at).getTime() : 0;
           const dateB = b.created_at ? new Date(b.created_at).getTime() : 0;
@@ -127,10 +125,21 @@ export default function DashboardPage() {
   const activeProjects = projects.filter(p => activeStatuses.includes(p.status));
   const pastProjects = projects.filter(p => !activeStatuses.includes(p.status));
   
+  activeProjects.sort((a, b) => {
+    const dateA = a.created_at ? new Date(a.created_at).getTime() : 0;
+    const dateB = b.created_at ? new Date(b.created_at).getTime() : 0;
+    return dateB - dateA;
+  });
+
+  pastProjects.sort((a, b) => {
+    const dateA = a.created_at ? new Date(a.created_at).getTime() : 0;
+    const dateB = b.created_at ? new Date(b.created_at).getTime() : 0;
+    return dateB - dateA;
+  });
+  
   const activeContractsCount = activeProjects.length;
   const totalLockedAmount = activeProjects.reduce((sum, p) => sum + Number(p.budget || 0), 0);
 
-  // استایل اسکرول‌بار کاستوم شده برای تلوایند
   const scrollbarClasses = "max-h-[380px] overflow-y-auto pr-3 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-slate-700 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-slate-600";
 
   return (
