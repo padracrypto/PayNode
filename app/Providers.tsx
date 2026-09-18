@@ -9,30 +9,33 @@ import {
 import '@rainbow-me/rainbowkit/styles.css';
 import { WagmiProvider } from 'wagmi';
 import { QueryClientProvider, QueryClient } from '@tanstack/react-query';
-import { type Chain } from 'viem';
+import { fallback, http } from 'viem';
+import { arc, ARC_RPC_URLS, ARC_CHAIN_ID } from '@/lib/paynode';
+import { SiweProvider } from './providers/SiweProvider';
 
-const arcTestnet = {
-  id: 5042002,
-  name: 'Arc Testnet',
-  nativeCurrency: { name: 'USDC', symbol: 'USDC', decimals: 18 },
-  rpcUrls: {
-    default: { http: ['https://rpc.testnet.arc.network'] },
-  },
-  blockExplorers: {
-    default: { name: 'ArcScan', url: 'https://testnet.arcscan.app' },
-  },
-} as const;
-
+/**
+ * The chain object now comes from lib/paynode.ts, built with `satisfies Chain`.
+ * The previous `arcTestnet as unknown as Chain` cast disabled the exact type check that
+ * would have caught a malformed chain definition — and hardcoded TESTNET, with a single
+ * RPC endpoint and no fallback.
+ */
 const config = getDefaultConfig({
   appName: 'PayNode Escrow',
-  projectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || '',
-  chains: [arcTestnet as unknown as Chain],
+  // Non-null: an empty projectId makes WalletConnect fail silently, leaving only
+  // injected wallets working with no error anywhere. Fail at boot instead.
+  projectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID!,
+  chains: [arc],
+  transports: {
+    [ARC_CHAIN_ID]: fallback(ARC_RPC_URLS.map((url) => http(url))),
+  },
   ssr: true,
 });
 
-const queryClient = new QueryClient();
-
 export function Providers({ children }: { children: React.ReactNode }) {
+  // Per-mount, not module scope. With ssr:true a module-level QueryClient is shared
+  // across server requests, which can leak one user's cached data into another's render.
+  const [queryClient] = React.useState(() => new QueryClient());
+
   return (
     <WagmiProvider config={config}>
       <QueryClientProvider client={queryClient}>
@@ -45,7 +48,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
             overlayBlur: 'small',
           })}
         >
-          {children}
+          <SiweProvider>{children}</SiweProvider>
         </RainbowKitProvider>
       </QueryClientProvider>
     </WagmiProvider>

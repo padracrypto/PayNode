@@ -32,18 +32,23 @@ export default function PublicProfilePage() {
     if (profileData && !profileError) {
       setProfile(profileData);
       
-      const { data: projects } = await supabase
-        .from('projects')
-        .select('rating')
-        .eq('builder', profileData.wallet_address)
-        .eq('status', 'Completed');
+      // Reads the aggregate view, not the projects table.
+      //
+      // Under the RLS policies in supabase/migrations/0001_rls_siwe.sql, a visitor has no
+      // read access to projects rows they are not a party to — so the old query would now
+      // return zero rows and every builder would show a 0.0 rating. `builder_stats` exposes
+      // only counts and averages, so a public profile page can show reputation without
+      // leaking anyone's project titles, budgets, clients or delivery links.
+      const { data: stats } = await supabase
+        .from('builder_stats')
+        .select('completed_projects, average_rating')
+        .eq('builder_wallet', profileData.wallet_address.toLowerCase())
+        .maybeSingle();
 
-      const completedCount = projects?.length || 0;
-      const avgRating = completedCount > 0 
-        ? (projects!.reduce((acc, curr) => acc + (Number(curr.rating) || 5), 0) / completedCount).toFixed(1) 
-        : '0.0';
-        
-      setStats({ rating: avgRating, completed: completedCount });
+      setStats({
+        rating: stats?.average_rating ? Number(stats.average_rating).toFixed(1) : '0.0',
+        completed: stats?.completed_projects ?? 0,
+      });
     }
     setLoading(false);
   };

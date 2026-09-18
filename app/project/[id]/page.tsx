@@ -1,178 +1,47 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { useAccount, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
-import { parseUnits } from 'viem';
-import { supabase } from '../../lib/supabase';
+import {
+  useAccount,
+  useWriteContract,
+  useWaitForTransactionReceipt,
+  useReadContract,
+  useBlockNumber,
+  useChainId,
+  useSwitchChain,
+  usePublicClient,
+  useWatchContractEvent,
+} from 'wagmi';
+import { zeroAddress } from 'viem';
+import { supabase } from '@/lib/supabase';
+import {
+  escrowContract,
+  parseProject,
+  deriveActions,
+  ProjectStatus,
+  STATUS_LABEL,
+  ResolutionPath,
+  PROTOCOL,
+  ARC_CHAIN_ID,
+  formatUSDC,
+  formatCountdown,
+  describeTxError,
+  isUserRejection,
+  txUrl,
+  type OnChainProject,
+} from '@/lib/paynode';
+import { useSiwe } from '@/app/providers/SiweProvider';
 
-// Updated ABI directly from Remix
-const ESCROW_ABI = [
-  {
-    "inputs": [{"internalType": "uint256","name": "_projectId","type": "uint256"}],
-    "name": "cancelProject",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [{"internalType": "uint256","name": "_projectId","type": "uint256"}],
-    "name": "claimByBuilder",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {"internalType": "address payable","name": "_builder","type": "address"},
-      {"internalType": "uint256","name": "_amount","type": "uint256"},
-      {"internalType": "uint256","name": "_durationInDays","type": "uint256"},
-      {"internalType": "uint8","name": "_maxRevisions","type": "uint8"}
-    ],
-    "name": "createProject",
-    "outputs": [{"internalType": "uint256","name": "","type": "uint256"}],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {"indexed": true,"internalType": "uint256","name": "projectId","type": "uint256"},
-      {"indexed": false,"internalType": "address","name": "raisedBy","type": "address"}
-    ],
-    "name": "DisputeRaised",
-    "type": "event"
-  },
-  {
-    "inputs": [{"internalType": "uint256","name": "_projectId","type": "uint256"}],
-    "name": "fundProject",
-    "outputs": [],
-    "stateMutability": "payable",
-    "type": "function"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {"indexed": true,"internalType": "uint256","name": "projectId","type": "uint256"},
-      {"indexed": false,"internalType": "uint256","name": "amount","type": "uint256"}
-    ],
-    "name": "FundsLocked",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {"indexed": true,"internalType": "uint256","name": "projectId","type": "uint256"},
-      {"indexed": true,"internalType": "address","name": "builder","type": "address"},
-      {"indexed": false,"internalType": "uint256","name": "amount","type": "uint256"}
-    ],
-    "name": "FundsReleased",
-    "type": "event"
-  },
-  {
-    "inputs": [{"internalType": "uint256","name": "_projectId","type": "uint256"}],
-    "name": "markDelivered",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "anonymous": false,
-    "inputs": [{"indexed": true,"internalType": "uint256","name": "projectId","type": "uint256"}],
-    "name": "ProjectCancelled",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {"indexed": true,"internalType": "uint256","name": "projectId","type": "uint256"},
-      {"indexed": true,"internalType": "address","name": "client","type": "address"},
-      {"indexed": true,"internalType": "address","name": "builder","type": "address"},
-      {"indexed": false,"internalType": "uint256","name": "amount","type": "uint256"},
-      {"indexed": false,"internalType": "uint256","name": "deadline","type": "uint256"},
-      {"indexed": false,"internalType": "uint8","name": "maxRevisions","type": "uint8"}
-    ],
-    "name": "ProjectCreated",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {"indexed": true,"internalType": "uint256","name": "projectId","type": "uint256"},
-      {"indexed": true,"internalType": "address","name": "client","type": "address"},
-      {"indexed": false,"internalType": "uint256","name": "amount","type": "uint256"}
-    ],
-    "name": "ProjectRefunded",
-    "type": "event"
-  },
-  {
-    "inputs": [{"internalType": "uint256","name": "_projectId","type": "uint256"}],
-    "name": "raiseDispute",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [{"internalType": "uint256","name": "_projectId","type": "uint256"}],
-    "name": "releaseFunds",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [{"internalType": "uint256","name": "_projectId","type": "uint256"}],
-    "name": "requestRevision",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {"indexed": true,"internalType": "uint256","name": "projectId","type": "uint256"},
-      {"indexed": false,"internalType": "uint8","name": "revisionsLeft","type": "uint8"}
-    ],
-    "name": "RevisionRequested",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {"indexed": true,"internalType": "uint256","name": "projectId","type": "uint256"},
-      {"indexed": false,"internalType": "uint256","name": "deliveredAt","type": "uint256"}
-    ],
-    "name": "WorkDelivered",
-    "type": "event"
-  },
-  {
-    "inputs": [],
-    "name": "projectCounter",
-    "outputs": [{"internalType": "uint256","name": "","type": "uint256"}],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [{"internalType": "uint256","name": "","type": "uint256"}],
-    "name": "projects",
-    "outputs": [
-      {"internalType": "address payable","name": "client","type": "address"},
-      {"internalType": "address payable","name": "builder","type": "address"},
-      {"internalType": "uint256","name": "amount","type": "uint256"},
-      {"internalType": "uint256","name": "deadline","type": "uint256"},
-      {"internalType": "uint8","name": "maxRevisions","type": "uint8"},
-      {"internalType": "uint8","name": "revisionsUsed","type": "uint8"},
-      {"internalType": "enum PayNodeEscrow.ProjectStatus","name": "status","type": "uint8"},
-      {"internalType": "bool","name": "isFunded","type": "bool"},
-      {"internalType": "uint256","name": "deliveredAt","type": "uint256"}
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  }
-] as const;
+const PATH_LABEL: Record<number, string> = {
+  [ResolutionPath.DesignatedArbitrator]: 'the designated arbitrator',
+  [ResolutionPath.AutonomousResolver]: 'automatic resolution',
+  [ResolutionPath.MutualSettlement]: 'mutual agreement',
+  [ResolutionPath.StaleDisputeBreaker]: 'the 30-day timeout',
+};
 
-// The New Contract Address
-const ESCROW_CONTRACT_ADDRESS = '0x5BaaED98bc16692644b9a74ffa690cE46EfA33D4';
+const short = (a?: string) => (a ? `${a.slice(0, 6)}…${a.slice(-4)}` : '');
 
 export default function ProjectPage() {
   const { id } = useParams();
@@ -195,16 +64,99 @@ export default function ProjectPage() {
   const [hoveredRating, setHoveredRating] = useState<number>(0);
   
   const [activeAction, setActiveAction] = useState<string | null>(null);
+  const [banner, setBanner] = useState<{ kind: 'error' | 'info'; text: string } | null>(null);
+  const [settlementBps, setSettlementBps] = useState<number>(5000);
   const { data: hash, error: writeError, writeContract } = useWriteContract();
-  const { isSuccess: isConfirmed } = useWaitForTransactionReceipt({ hash });
+  // `isSuccess` means the receipt was FETCHED, not that the transaction succeeded. viem
+  // resolves waitForTransactionReceipt for reverted transactions too, so without the status
+  // check a revert was being written to Supabase as a success — the DB said "paid" while the
+  // money was still in escrow, and the UI removed the button that would have released it.
+  const {
+    data: receipt,
+    isLoading: isConfirming,
+    isSuccess: isMined,
+  } = useWaitForTransactionReceipt({ hash });
+  const isConfirmed = isMined && receipt?.status === 'success';
+  const syncedRef = useRef<string | null>(null);
+
+  const chainId = useChainId();
+  const { switchChainAsync } = useSwitchChain();
+  const publicClient = usePublicClient();
+  const { authedWallet } = useSiwe();
+  const wrongNetwork = !!address && chainId !== ARC_CHAIN_ID;
 
   useEffect(() => {
     fetchProject();
   }, [id]);
 
-  const isClient = project?.client && address?.toLowerCase() === project.client.toLowerCase();
-  const isBuilder = project?.builder && address?.toLowerCase() === project.builder.toLowerCase();
-  const isUnauthorized = !isClient && !isBuilder && !!address;
+  // ------------------------------------------------------------------
+  // ON-CHAIN STATE IS THE SOURCE OF TRUTH
+  //
+  // Every gate below used to read Supabase's `status` string, which is written by whichever
+  // browser happened to succeed. That produced buttons that always revert (Request Revision
+  // with revisions exhausted) and buttons that vanish while funds are still escrowed.
+  // Supabase now supplies presentation only: title, notes, links, usernames.
+  // ------------------------------------------------------------------
+  const pid = project?.blockchain_id != null ? BigInt(project.blockchain_id) : undefined;
+
+  const { data: blockNumber } = useBlockNumber({ watch: true, chainId: ARC_CHAIN_ID });
+
+  const { data: rawProject, refetch: refetchChain } = useReadContract({
+    ...escrowContract,
+    functionName: 'projects',
+    args: pid !== undefined ? [pid] : undefined,
+    query: { enabled: pid !== undefined },
+  });
+
+  const { data: arbitratorAddr } = useReadContract({
+    ...escrowContract,
+    functionName: 'projectArbitrator',
+    args: pid !== undefined ? [pid] : undefined,
+    query: { enabled: pid !== undefined },
+  });
+
+  const { data: pendingOffer, refetch: refetchOffer } = useReadContract({
+    ...escrowContract,
+    functionName: 'settlements',
+    args: pid !== undefined ? [pid] : undefined,
+    query: { enabled: pid !== undefined },
+  });
+
+  // Chain time, not Date.now(). The contract compares against block.timestamp; a skewed
+  // client clock otherwise enables a button whose transaction reverts.
+  const [chainNow, setChainNow] = useState<bigint>(() => BigInt(Math.floor(Date.now() / 1000)));
+  useEffect(() => {
+    if (!publicClient) return;
+    publicClient
+      .getBlock()
+      .then((b) => setChainNow(b.timestamp))
+      .catch(() => {});
+  }, [publicClient, blockNumber]);
+
+  // Re-read on every block so the UI reflects reality rather than a stale row.
+  useEffect(() => {
+    if (pid === undefined) return;
+    void refetchChain();
+    void refetchOffer();
+  }, [blockNumber, pid, refetchChain, refetchOffer]);
+
+  const onchain: OnChainProject | null = useMemo(
+    () => (rawProject ? parseProject(rawProject as never) : null),
+    [rawProject],
+  );
+
+  const act = useMemo(
+    () => (onchain ? deriveActions(onchain, address, chainNow) : null),
+    [onchain, address, chainNow],
+  );
+
+  const hasArbitrator = !!arbitratorAddr && arbitratorAddr !== zeroAddress;
+  const offer = pendingOffer as readonly [`0x${string}`, number] | undefined;
+  const hasOffer = !!offer && offer[0] !== zeroAddress;
+
+  const isClient = act?.isClient ?? false;
+  const isBuilder = act?.isBuilder ?? false;
+  const isUnauthorized = !isClient && !isBuilder && !!address && !!onchain;
 
   useEffect(() => {
     if (!project?.deadline) return;
@@ -264,18 +216,85 @@ export default function ProjectPage() {
   }, [project?.delivered_at, project?.status]);
 
   useEffect(() => {
-    if (isConfirmed && activeAction) {
-      handleDbSyncAfterWeb3();
-    }
-  }, [isConfirmed, activeAction]);
-
-  useEffect(() => {
-    if (writeError) {
+    if (isMined && receipt?.status === 'reverted') {
       setLoading(false);
       setActiveAction(null);
-      alert("Transaction failed or was rejected by the wallet.");
+      setBanner({ kind: 'error', text: 'That transaction reverted. Nothing changed on-chain.' });
+      void refetchChain();
+      return;
     }
+    if (isConfirmed && activeAction && syncedRef.current !== hash) {
+      syncedRef.current = hash ?? null;
+      void handleDbSyncAfterWeb3();
+      void refetchChain();
+      void refetchOffer();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isConfirmed, isMined, receipt, activeAction, hash]);
+
+  useEffect(() => {
+    if (!writeError) return;
+    setLoading(false);
+    setActiveAction(null);
+    // A user dismissing the wallet prompt chose to do that. Showing them a failure modal
+    // for their own deliberate action is the single most common dApp papercut.
+    if (isUserRejection(writeError)) return;
+    setBanner({ kind: 'error', text: describeTxError(writeError) ?? 'Transaction failed.' });
   }, [writeError]);
+
+  // Surface resolutions that happened without this user acting — an arbitrator ruling, an
+  // automatic resolution, or a keeper calling the 30-day breaker.
+  useWatchContractEvent({
+    ...escrowContract,
+    eventName: 'DisputeResolved',
+    args: pid !== undefined ? { projectId: pid } : undefined,
+    enabled: pid !== undefined,
+    onLogs: (logs) => {
+      const a = logs[0]?.args as { builderBps?: number; resolutionPath?: number } | undefined;
+      if (!a) return;
+      setBanner({
+        kind: 'info',
+        text:
+          `Dispute resolved by ${PATH_LABEL[a.resolutionPath ?? 0]}: ` +
+          `${(a.builderBps ?? 0) / 100}% to the builder.`,
+      });
+      void refetchChain();
+    },
+  });
+
+  const guardNetwork = async (): Promise<boolean> => {
+    if (!wrongNetwork) return true;
+    try {
+      await switchChainAsync({ chainId: ARC_CHAIN_ID });
+      return true;
+    } catch {
+      setBanner({ kind: 'error', text: 'Switch to the Arc network to continue.' });
+      return false;
+    }
+  };
+
+  /** Single entry point for every contract write: pins the chain, guards the network, tracks state. */
+  const send = async (
+    functionName: string,
+    args: readonly unknown[],
+    action: string,
+    statusText: string,
+  ) => {
+    if (pid === undefined) {
+      setBanner({ kind: 'error', text: 'This project is not linked to the blockchain yet.' });
+      return;
+    }
+    if (!(await guardNetwork())) return;
+    setBanner(null);
+    setLoading(true);
+    setTxStatus(statusText);
+    setActiveAction(action);
+    writeContract({
+      ...escrowContract,
+      functionName,
+      args,
+    } as never);
+  };
 
   const fetchProject = async () => {
     const { data } = await supabase.from('projects').select('*').eq('id', id).single();
@@ -297,14 +316,19 @@ export default function ProjectPage() {
     }
   };
 
-  const updateProjectStatus = async (newStatus: string, extraData: any = {}) => {
-    const { error } = await supabase.from('projects').update({ status: newStatus, ...extraData }).eq('id', id);
-    if (!error) {
-      setIsRevisionMode(false);
-      fetchProject();
-    } else {
-      alert("Error updating project: " + error.message);
-    }
+  /**
+   * Update the presentation-only columns of a project.
+   *
+   * There is deliberately no `status` parameter. Under the RLS policies in
+   * supabase/migrations/0001_rls_siwe.sql, the `authenticated` role has no UPDATE grant on
+   * projects.status — nor on client, builder, budget, amount_wei or blockchain_id. Sending
+   * one would fail with "permission denied for column status", and that is the point: it is
+   * why a session can no longer mark someone else's project Completed to hide their
+   * release button. Those columns belong to the service-role indexer.
+   */
+  const updateProjectFields = async (fields: Record<string, unknown>) => {
+    const { error } = await supabase.from('projects').update(fields).eq('id', id);
+    if (error) throw error;
   };
 
   const sendNotification = async (receiverWallet: string, message: string, type: string) => {
@@ -321,187 +345,141 @@ export default function ProjectPage() {
     }
   };
 
+  /**
+   * Post-transaction Supabase write.
+   *
+   * IMPORTANT: this no longer writes `status`. Under the RLS policies in
+   * supabase/migrations/0001_rls_siwe.sql, `authenticated` has no UPDATE grant on
+   * projects.status, projects.client, projects.builder, projects.budget,
+   * projects.amount_wei or projects.blockchain_id — a browser session physically cannot
+   * change them. Those columns are owned by the service-role indexer, which derives them
+   * from confirmed chain events. That is what makes it impossible for a session to mark
+   * someone else's project Completed and hide their release button.
+   *
+   * What remains here is presentation only: notes, links, and the client's rating.
+   */
   const handleDbSyncAfterWeb3 = async () => {
-    setTxStatus('Syncing Database...');
-    switch(activeAction) {
-      case 'Funded': 
-        await updateProjectStatus('Funded'); 
-        await sendNotification(project.builder, `Client has funded "${project.title}". You can start working now!`, 'PROJECT_FUNDED');
-        break;
-      case 'Delivered':
-        await updateProjectStatus('Delivered', { delivery_notes: deliveryData.notes, delivery_links: deliveryData.links, delivered_at: new Date().toISOString() });
-        await sendNotification(project.client, `Builder has delivered the work for "${project.title}". Please review it.`, 'WORK_DELIVERED');
-        break;
-      case 'Completed': 
-        await updateProjectStatus('Completed', { rating: selectedRating }); 
-        await sendNotification(project.builder, `Funds released! Client approved your work for "${project.title}".`, 'PROJECT_FUNDED');
-        break;
-      case 'ForceCompleted': 
-        await updateProjectStatus('Completed'); 
-        await sendNotification(project.client, `Builder claimed the funds for "${project.title}" after the 7-day review period expired.`, 'PROJECT_FUNDED');
-        break;
-      case 'Refunded': 
-        await updateProjectStatus('Refunded'); 
-        if (isClient) {
-          await sendNotification(project.builder, `Client claimed a refund for "${project.title}".`, 'PROJECT_CANCELLED');
-        }
-        break;
-      case 'Refunded_Builder': 
-        await updateProjectStatus('Refunded', { revision_notes: 'Cancelled by Builder' }); 
-        await sendNotification(project.client, `Builder cancelled the contract for "${project.title}". Funds have been refunded.`, 'PROJECT_CANCELLED');
-        break;
-      case 'Cancelled_Builder': 
-        await updateProjectStatus('Cancelled', { revision_notes: 'Declined by Builder' }); 
-        await sendNotification(project.client, `Builder declined your project request for "${project.title}".`, 'PROJECT_CANCELLED');
-        break;
-      case 'Revision': 
-        await updateProjectStatus('Revision', { revision_notes: revisionNote }); 
-        await sendNotification(project.builder, `Client requested a revision for "${project.title}".`, 'REVISION_REQUESTED');
-        break;
+    setTxStatus('Saving…');
+    try {
+      switch (activeAction) {
+        case 'Delivered':
+          await updateProjectFields({
+            delivery_notes: deliveryData.notes,
+            delivery_links: deliveryData.links,
+          });
+          await sendNotification(project.builder === authedWallet ? project.client : project.builder,
+            `Work delivered for "${project.title}". Please review it.`, 'WORK_DELIVERED');
+          break;
+        case 'Completed':
+          await updateProjectFields({ rating: selectedRating });
+          await sendNotification(project.builder,
+            `Funds released! Your work on "${project.title}" was approved.`, 'PROJECT_FUNDED');
+          break;
+        case 'Revision':
+          await updateProjectFields({ revision_notes: revisionNote });
+          setIsRevisionMode(false);
+          await sendNotification(project.builder,
+            `A revision was requested for "${project.title}".`, 'REVISION_REQUESTED');
+          break;
+        case 'Funded':
+          await sendNotification(project.builder,
+            `"${project.title}" is funded. You can start work.`, 'PROJECT_FUNDED');
+          break;
+        case 'Refunded_Builder':
+        case 'Cancelled_Builder':
+          await updateProjectFields({ revision_notes: 'Cancelled by builder' });
+          await sendNotification(project.client,
+            `The builder ended "${project.title}". You have been refunded.`, 'PROJECT_CANCELLED');
+          break;
+        case 'Refunded':
+          await sendNotification(project.builder,
+            `The client reclaimed funds for "${project.title}" after the deadline.`, 'PROJECT_CANCELLED');
+          break;
+        case 'Disputed':
+          await sendNotification(isClient ? project.builder : project.client,
+            `A dispute was opened on "${project.title}".`, 'PROJECT_CANCELLED');
+          break;
+        case 'OfferSent':
+          await sendNotification(isClient ? project.builder : project.client,
+            `You have a settlement offer on "${project.title}".`, 'REVISION_REQUESTED');
+          break;
+        case 'Settled':
+        case 'ForceResolved':
+        case 'OfferWithdrawn':
+          // Fully chain-derived; the indexer records the outcome.
+          break;
+      }
+      await fetchProject();
+    } catch (err) {
+      // The transaction already succeeded on-chain. A failed cache write must never be
+      // reported as a failed payment.
+      setBanner({
+        kind: 'info',
+        text: 'Your transaction succeeded on-chain. Some details may take a moment to appear.',
+      });
+      console.error('Supabase sync failed after a successful transaction:', err);
     }
     setActiveAction(null);
     setLoading(false);
   };
 
-  const isPastDeadline = timeLeft === 'Expired';
-  const isForceReleaseAvailable = project?.delivered_at ? new Date().getTime() >= new Date(project.delivered_at).getTime() + (7 * 24 * 60 * 60 * 1000) : false;
+  // Legacy DB-derived flags, kept only for the deadline countdown display.
+  const isPastDeadline = act?.pastDeadline ?? false;
 
-  const fundEscrow = async () => {
-    if (project.blockchain_id == null) {
-      alert("Error: Blockchain ID is missing. The project was not synced properly on creation.");
-      return;
-    }
-    setLoading(true); 
-    setTxStatus('Requesting Signature...');
-    setActiveAction('Funded');
-    writeContract({
-      address: ESCROW_CONTRACT_ADDRESS,
-      abi: ESCROW_ABI,
-      functionName: 'fundProject',
-      args: [BigInt(project.blockchain_id)], 
-      value: parseUnits(project.budget.toString(), 18) 
-    });
-  };
+  // ---------------- actions (all routed through the guarded `send`) ----------------
+  const fundEscrow = () =>
+    send('fundProject', [pid!], 'Funded', 'Confirm in your wallet…');
 
-  const executeReleaseFunds = async () => {
-    if (project.blockchain_id == null) {
-      alert("Error: Blockchain ID is missing. Cannot interact with smart contract.");
-      return;
-    }
+  const executeReleaseFunds = () => {
     setShowRatingModal(false);
-    setLoading(true); 
-    setTxStatus('Releasing Funds...');
-    setActiveAction('Completed');
-    writeContract({
-      address: ESCROW_CONTRACT_ADDRESS,
-      abi: ESCROW_ABI,
-      functionName: 'releaseFunds',
-      args: [BigInt(project.blockchain_id)]
-    });
+    return send('releaseFunds', [pid!], 'Completed', 'Releasing funds…');
   };
 
-  const forceClaimFunds = async () => {
-    if (project.blockchain_id == null) {
-      alert("Error: Blockchain ID is missing.");
-      return;
-    }
-    setLoading(true); 
-    setTxStatus('Claiming Funds...');
-    setActiveAction('ForceCompleted'); 
-    writeContract({
-      address: ESCROW_CONTRACT_ADDRESS,
-      abi: ESCROW_ABI,
-      functionName: 'claimByBuilder',
-      args: [BigInt(project.blockchain_id)]
-    });
-  };
+  const forceClaimFunds = () =>
+    send('claimByBuilder', [pid!], 'ForceCompleted', 'Claiming funds…');
 
-  const claimRefund = async () => {
-    if (project.blockchain_id == null) {
-      alert("Error: Blockchain ID is missing.");
-      return;
-    }
-    setLoading(true); 
-    setTxStatus('Reclaiming Funds...');
-    setActiveAction('Refunded');
-    writeContract({
-      address: ESCROW_CONTRACT_ADDRESS,
-      abi: ESCROW_ABI,
-      functionName: 'cancelProject',
-      args: [BigInt(project.blockchain_id)]
-    });
-  };
+  const claimRefund = () =>
+    send('claimRefund', [pid!], 'Refunded', 'Reclaiming funds…');
 
   const submitRevision = () => {
-    if (!revisionNote) return alert("Provide notes.");
-    if (project.blockchain_id == null) {
-      alert("Error: Blockchain ID is missing.");
-      return;
-    }
-    setLoading(true);
-    setTxStatus('Submitting Feedback...');
-    setActiveAction('Revision');
-    writeContract({
-      address: ESCROW_CONTRACT_ADDRESS,
-      abi: ESCROW_ABI,
-      functionName: 'requestRevision',
-      args: [BigInt(project.blockchain_id)]
-    });
+    if (!revisionNote) { setBanner({ kind: 'error', text: 'Add a note describing what needs changing.' }); return; }
+    return send('requestRevision', [pid!], 'Revision', 'Submitting feedback…');
   };
 
+  // Declining an unfunded request and cancelling a funded contract are DIFFERENT contract
+  // calls now. v1 overloaded one `cancelProject` for both, with identical duplicated
+  // branches that differed only by a deadline check.
   const declineProject = () => {
-    if (project.blockchain_id == null) {
-      alert("Error: Blockchain ID is missing.");
-      return;
-    }
-    if (window.confirm("Are you sure you want to decline this project request?")) {
-      setLoading(true);
-      setTxStatus('Cancelling Project...');
-      setActiveAction('Cancelled_Builder');
-      writeContract({
-        address: ESCROW_CONTRACT_ADDRESS,
-        abi: ESCROW_ABI,
-        functionName: 'cancelProject',
-        args: [BigInt(project.blockchain_id)]
-      });
-    }
+    if (!window.confirm('Decline this project request?')) return;
+    return send('cancelUnfunded', [pid!], 'Cancelled_Builder', 'Declining…');
   };
 
   const cancelByBuilder = () => {
-    if (project.blockchain_id == null) {
-      alert("Error: Blockchain ID is missing.");
-      return;
-    }
-    if (window.confirm("Are you sure you want to cancel the contract? The funds will be fully refunded to the client.")) {
-      setLoading(true);
-      setTxStatus('Refunding Client...');
-      setActiveAction('Refunded_Builder');
-      writeContract({
-        address: ESCROW_CONTRACT_ADDRESS,
-        abi: ESCROW_ABI,
-        functionName: 'cancelProject',
-        args: [BigInt(project.blockchain_id)]
-      });
-    }
+    if (!window.confirm('Cancel the contract? The client will be refunded in full.')) return;
+    return send('builderCancel', [pid!], 'Refunded_Builder', 'Refunding client…');
   };
 
-  const deliverWork = async () => {
-    if (!deliveryData.links) return alert("Provide links.");
-    if (project.blockchain_id == null) {
-      alert("Error: Blockchain ID is missing.");
-      return;
-    }
-    setLoading(true);
-    setTxStatus('Recording Delivery on Blockchain...');
-    setActiveAction('Delivered');
-    
-    writeContract({
-      address: ESCROW_CONTRACT_ADDRESS,
-      abi: ESCROW_ABI,
-      functionName: 'markDelivered',
-      args: [BigInt(project.blockchain_id)]
-    });
+  const deliverWork = () => {
+    if (!deliveryData.links) { setBanner({ kind: 'error', text: 'Add a link to your deliverable.' }); return; }
+    return send('markDelivered', [pid!], 'Delivered', 'Recording delivery…');
   };
+
+  // ---------------- dispute + settlement (the four resolution paths) ----------------
+  const raiseDispute = () =>
+    send('raiseDispute', [pid!], 'Disputed', 'Opening dispute…');
+
+  const proposeSettlement = () =>
+    send('proposeSettlement', [pid!, settlementBps], 'OfferSent', 'Sending offer…');
+
+  const acceptSettlement = () =>
+    send('acceptSettlement', [pid!, offer![1]], 'Settled', 'Accepting offer…');
+
+  const withdrawSettlement = () =>
+    send('withdrawSettlement', [pid!], 'OfferWithdrawn', 'Withdrawing offer…');
+
+  const forceResolve = () =>
+    send('forceResolveStaleDispute', [pid!], 'ForceResolved', 'Settling dispute…');
+
 
   if (!project) return (
     <div className="min-h-[calc(100vh-80px)] w-full flex items-center justify-center">
@@ -598,14 +576,14 @@ export default function ProjectPage() {
         <div className="absolute top-0 right-0 bg-[#050B14] px-6 py-3 rounded-bl-2xl border-b border-l border-slate-800/80">
           <span className={`text-xs font-black tracking-widest uppercase flex items-center gap-2 ${
             project.status === 'Completed' ? 'text-emerald-400' :
-            project.status === 'Cancelled' ? 'text-red-400' :
+            onchain?.status === ProjectStatus.Cancelled ? 'text-red-400' :
             project.status === 'Refunded' ? 'text-orange-500' :
-            project.status === 'Delivered' ? 'text-purple-400' :
-            project.status === 'Revision' ? 'text-orange-400' : 'text-blue-400'
+            onchain?.status === ProjectStatus.Delivered ? 'text-purple-400' :
+            onchain?.status === ProjectStatus.InRevision ? 'text-orange-400' : onchain?.status === ProjectStatus.Disputed ? 'text-amber-400' : 'text-blue-400'
           }`}>
-            {project.status === 'Funded' && <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse"></span>}
-            {project.status === 'Pending' && <span className="w-2 h-2 rounded-full bg-slate-400 animate-pulse"></span>}
-            {project.status}
+            {onchain?.status === ProjectStatus.Funded && <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse"></span>}
+            {onchain?.status === ProjectStatus.AwaitingFunds && <span className="w-2 h-2 rounded-full bg-slate-400 animate-pulse"></span>}
+            {onchain ? STATUS_LABEL[onchain.status] : project.status}
           </span>
         </div>
 
@@ -634,7 +612,7 @@ export default function ProjectPage() {
           </div>
           <div className="bg-[#050B14] border border-slate-800/80 rounded-2xl p-5">
             <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Budget</p>
-            <p className="text-blue-400 font-mono font-bold text-lg">{project.budget} USDC</p>
+            <p className="text-blue-400 font-mono font-bold text-lg">{onchain ? formatUSDC(onchain.amount) : project.budget + ' USDC'}</p>
           </div>
           <div className="bg-[#050B14] border border-slate-800/80 rounded-2xl p-5">
             
@@ -656,7 +634,138 @@ export default function ProjectPage() {
 
         <div className="pt-6 border-t border-slate-800/50">
 
-          {project.status === 'Cancelled' && (
+          {banner && (
+            <div
+              className={`mb-6 p-4 rounded-xl text-sm font-bold border ${
+                banner.kind === 'error'
+                  ? 'bg-red-500/10 border-red-500/30 text-red-400'
+                  : 'bg-blue-500/10 border-blue-500/30 text-blue-300'
+              }`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <span className="break-words">{banner.text}</span>
+                <button onClick={() => setBanner(null)} className="shrink-0 opacity-60 hover:opacity-100">✕</button>
+              </div>
+              {hash && txUrl(hash) && (
+                <a href={txUrl(hash)} target="_blank" rel="noopener noreferrer"
+                   className="block mt-2 underline underline-offset-4 font-normal opacity-80 hover:opacity-100">
+                  View transaction
+                </a>
+              )}
+            </div>
+          )}
+
+          {wrongNetwork && (
+            <div className="mb-6 p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400 text-sm font-bold flex items-center justify-between gap-3">
+              <span>You&apos;re on the wrong network.</span>
+              <button onClick={() => switchChainAsync({ chainId: ARC_CHAIN_ID }).catch(() => {})}
+                      className="underline underline-offset-4 hover:text-amber-300 shrink-0">
+                Switch to Arc
+              </button>
+            </div>
+          )}
+
+          {/* ============================================================
+              DISPUTED — v1 rendered this state with no actions whatsoever,
+              because on-chain there was no way out of it. All four
+              resolution paths are surfaced here.
+              ============================================================ */}
+          {onchain?.status === ProjectStatus.Disputed && (
+            <div className="bg-amber-950/20 border border-amber-900/50 p-6 md:p-8 rounded-3xl space-y-6">
+              <div>
+                <h3 className="text-amber-400 font-black text-lg mb-1">Dispute open</h3>
+                <p className="text-sm text-slate-400">
+                  {hasArbitrator ? (
+                    <>
+                      Awaiting a ruling from the agreed arbitrator{' '}
+                      <span className="font-mono text-slate-300">{short(arbitratorAddr as string)}</span>.
+                    </>
+                  ) : (
+                    <>Awaiting automatic resolution. You can also settle directly with the other party.</>
+                  )}
+                </p>
+              </div>
+
+              {/* ---- PATH 3: mutual 2-of-2, needs no third party at all ---- */}
+              {act?.canProposeSettlement && (
+                <div className="bg-[#050B14] border border-slate-800 rounded-2xl p-5">
+                  {hasOffer ? (
+                    <>
+                      <p className="text-white font-bold text-sm mb-1">
+                        {offer![0].toLowerCase() === address?.toLowerCase()
+                          ? 'Your offer is awaiting a response'
+                          : 'You have a settlement offer'}
+                      </p>
+                      <p className="text-slate-400 text-sm mb-4">
+                        {offer![1] / 100}% to the builder, {(10000 - offer![1]) / 100}% refunded to the client.
+                      </p>
+                      {offer![0].toLowerCase() === address?.toLowerCase() ? (
+                        <button onClick={withdrawSettlement} disabled={loading}
+                                className="text-slate-400 hover:text-red-400 text-xs font-bold underline underline-offset-4">
+                          Withdraw offer
+                        </button>
+                      ) : (
+                        <button onClick={acceptSettlement} disabled={loading}
+                                className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-xl font-bold text-sm">
+                          {loading ? txStatus : 'Accept and settle'}
+                        </button>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-white font-bold text-sm mb-3">Propose a split</p>
+                      <input type="range" min={0} max={10000} step={500} value={settlementBps}
+                             onChange={(e) => setSettlementBps(Number(e.target.value))}
+                             className="w-full accent-emerald-500 mb-2" />
+                      <div className="flex justify-between text-xs text-slate-400 mb-4">
+                        <span>Client {(10000 - settlementBps) / 100}%</span>
+                        <span>Builder {settlementBps / 100}%</span>
+                      </div>
+                      <button onClick={proposeSettlement} disabled={loading}
+                              className="w-full bg-blue-600 hover:bg-blue-500 text-white py-3 rounded-xl font-bold text-sm">
+                        {loading ? txStatus : 'Send offer'}
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* ---- PATH 4: the permissionless deadlock breaker ---- */}
+              <div className="border-t border-amber-900/30 pt-5">
+                {act?.canForceResolve ? (
+                  <button onClick={forceResolve} disabled={loading}
+                          className="w-full bg-amber-600 hover:bg-amber-500 text-white py-3 rounded-xl font-bold text-sm">
+                    {loading ? txStatus : onchain.preDispute === ProjectStatus.Delivered
+                      ? 'Force settle — split 50/50'
+                      : 'Force settle — full refund to client'}
+                  </button>
+                ) : (
+                  <p className="text-xs text-slate-500 leading-relaxed">
+                    If nobody resolves this, anyone can settle it in{' '}
+                    <span className="text-slate-300 font-bold">
+                      {formatCountdown(act?.staleAt ?? 0n, chainNow)}
+                    </span>{' '}
+                    — {onchain.preDispute === ProjectStatus.Delivered
+                      ? 'split 50/50 between both parties'
+                      : 'refunded in full to the client'}.
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Escalation entry point. The asymmetry (client may only dispute a delivery,
+              builder may dispute any funded stage) is encoded in deriveActions. */}
+          {act?.canRaiseDispute && (
+            <div className="mt-4 text-center">
+              <button onClick={raiseDispute} disabled={loading}
+                      className="text-slate-500 hover:text-amber-400 text-xs font-bold transition-colors underline decoration-slate-700 underline-offset-4">
+                Something wrong? Open a dispute
+              </button>
+            </div>
+          )}
+
+          {onchain?.status === ProjectStatus.Cancelled && (
              <div className="text-center py-4">
                <div className="text-3xl mb-4">🚫</div>
                <h2 className="text-xl font-bold text-red-400 mb-2">Project Cancelled</h2>
@@ -664,7 +773,7 @@ export default function ProjectPage() {
              </div>
           )}
 
-          {(project.status === 'Funded' || project.status === 'Revision') && isPastDeadline && isClient && (
+          {act?.canClaimRefund && (
             <div className="bg-red-950/20 border border-red-900/50 p-6 rounded-2xl flex items-center justify-between">
                <div>
                  <h3 className="text-red-400 font-bold mb-1">Deadline Passed</h3>
@@ -676,14 +785,14 @@ export default function ProjectPage() {
             </div>
           )}
 
-          {project.status === 'Funded' && isPastDeadline && isBuilder && (
+          {isBuilder && act?.pastDeadline && onchain?.status === ProjectStatus.Funded && (
             <div className="bg-red-950/20 border border-red-900/50 p-6 rounded-2xl text-center">
               <h2 className="text-red-400 font-bold text-lg mb-1">⚠️ Time Expired</h2>
               <p className="text-slate-400 text-sm">You missed the delivery deadline. The client can now claim a refund.</p>
             </div>
           )}
 
-          {(project.status === 'Pending' || project.status === 'AwaitingFunds') && isClient && (
+          {act?.canFund && (
             <div className="flex flex-col md:flex-row items-center justify-between bg-blue-950/10 border border-blue-900/30 p-6 rounded-2xl gap-4">
               <div>
                 <h3 className="text-white font-bold mb-1">Action Required</h3>
@@ -695,7 +804,7 @@ export default function ProjectPage() {
             </div>
           )}
 
-          {(project.status === 'Pending' || project.status === 'AwaitingFunds') && isBuilder && (
+          {isBuilder && onchain?.status === ProjectStatus.AwaitingFunds && (
              <div className="flex flex-col md:flex-row items-center justify-between bg-[#050B14] border border-slate-800/80 p-6 rounded-2xl gap-4">
                <div>
                  <h2 className="text-lg font-bold text-white mb-1">⏳ Waiting for Funds</h2>
@@ -707,7 +816,7 @@ export default function ProjectPage() {
              </div>
           )}
 
-          {project.status === 'Funded' && !isPastDeadline && isClient && (
+          {isClient && onchain?.status === ProjectStatus.Funded && !act?.pastDeadline && (
             <div className="text-center py-6">
               <div className="text-4xl mb-4 animate-bounce">🛠️</div>
               <h2 className="text-xl font-bold text-white mb-2">Work in Progress</h2>
@@ -715,7 +824,7 @@ export default function ProjectPage() {
             </div>
           )}
 
-          {((project.status === 'Funded' && !isPastDeadline) || project.status === 'Revision') && isBuilder && (
+          {act?.canDeliver && (
             <div className="bg-[#050B14] border border-slate-800/80 p-6 md:p-8 rounded-3xl">
               <div className="flex justify-between items-center mb-6">
                 <h2 className="text-xl font-black text-white">Deliver Work</h2>
@@ -747,7 +856,7 @@ export default function ProjectPage() {
             </div>
           )}
 
-          {(project.status === 'Delivered' || project.status === 'Completed') && (
+          {(onchain?.status === ProjectStatus.Delivered || onchain?.status === ProjectStatus.Completed) && (
             <div className={`bg-[#050B14] border ${project.status === 'Completed' ? 'border-emerald-900/30' : 'border-purple-900/30'} p-6 md:p-8 rounded-3xl`}>
               <h2 className={`text-xl font-bold ${project.status === 'Completed' ? 'text-emerald-400' : 'text-purple-400'} mb-6 flex items-center gap-2`}>
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5"><path fillRule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm3.857-9.809a.75.75 0 0 0-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 1 0-1.06 1.061l2.5 2.5a.75.75 0 0 0 1.137-.089l4-5.5Z" clipRule="evenodd" /></svg>
@@ -759,7 +868,7 @@ export default function ProjectPage() {
                 <p><strong className="text-slate-500 uppercase text-xs tracking-wider block mb-1">Link:</strong><a href={project.delivery_links} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 hover:underline break-all">{project.delivery_links}</a></p>
               </div>
               
-              {project.status === 'Delivered' && isClient && !isRevisionMode && (
+              {isClient && onchain?.status === ProjectStatus.Delivered && !isRevisionMode && (
                  <div className="flex flex-col sm:flex-row gap-4 mt-6 border-t border-slate-800 pt-6">
                    <button 
                      onClick={() => setShowRatingModal(true)} 
@@ -774,7 +883,7 @@ export default function ProjectPage() {
                  </div>
               )}
               
-              {project.status === 'Delivered' && isClient && isRevisionMode && (
+              {isClient && onchain?.status === ProjectStatus.Delivered && isRevisionMode && (
                  <div className="mt-6 border-t border-slate-800 pt-6">
                    <textarea 
                      className="w-full bg-[#0f172a] p-4 rounded-xl border border-orange-900/30 text-white text-sm mb-4 outline-none focus:border-orange-500/50 transition-all resize-none" 
@@ -791,7 +900,7 @@ export default function ProjectPage() {
                  </div>
               )}
 
-              {project.status === 'Delivered' && isBuilder && (
+              {isBuilder && onchain?.status === ProjectStatus.Delivered && (
                 <div className="mt-6 pt-6 border-t border-slate-800/80 flex flex-col items-center">
                   
                   <div className="flex items-center gap-1.5 mb-4 group relative w-max">
@@ -806,10 +915,10 @@ export default function ProjectPage() {
 
                   <button 
                     onClick={forceClaimFunds} 
-                    disabled={!isForceReleaseAvailable || loading} 
-                    className={`w-full py-3 rounded-xl font-bold transition-all text-sm ${isForceReleaseAvailable ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-[0_0_15px_rgba(16,185,129,0.3)]' : 'bg-[#0f172a] border border-slate-800 text-slate-500 cursor-not-allowed'}`}
+                    disabled={!(act?.canClaimByBuilder ?? false) || loading} 
+                    className={`w-full py-3 rounded-xl font-bold transition-all text-sm ${(act?.canClaimByBuilder ?? false) ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-[0_0_15px_rgba(16,185,129,0.3)]' : 'bg-[#0f172a] border border-slate-800 text-slate-500 cursor-not-allowed'}`}
                   >
-                    {loading && txStatus === 'Claiming Funds...' ? txStatus : (isForceReleaseAvailable ? 'Force Release (Claim Now)' : `Force Release (${forceReleaseTimeLeft || 'Calculating...'})`)}
+                    {loading && txStatus === 'Claiming Funds...' ? txStatus : ((act?.canClaimByBuilder ?? false) ? 'Force Release (Claim Now)' : `Force Release (${forceReleaseTimeLeft || 'Calculating...'})`)}
                   </button>
                 </div>
               )}

@@ -1,0 +1,179 @@
+'use client';
+
+import * as React from 'react';
+import { useAccount, useSignMessage, useChainId } from 'wagmi';
+import { createSiweMessage } from 'viem/siwe';
+import { ARC_CHAIN_ID } from '@/lib/paynode';
+import { resetSupabaseSession } from '@/lib/supabase';
+
+/**
+ * Binds the connected wallet to a cryptographically verified Supabase session.
+ *
+ * Connecting a wallet proves nothing to our backend — it is a client-side UI state. Before
+ * this provider existed the app passed `useAccount().address` straight into Supabase writes,
+ * which meant anyone could claim any address with a single curl (audit C-4). Signing in
+ * produces a signature the server verifies, and only then does a session exist.
+ */
+
+type SiweState = {
+  /** Wallet the SERVER has verified. May lag or differ from the connected wallet. */
+  authedWallet: string | null;
+  status: 'loading' | 'unauthenticated' | 'authenticating' | 'authenticated';
+  error: string | null;
+  /** True when a wallet is connected but not yet signed in. */
+  needsSignIn: boolean;
+  signIn: () => Promise<boolean>;
+  signOut: () => Promise<void>;
+};
+
+const SiweContext = React.createContext<SiweState | null>(null);
+
+export function useSiwe(): SiweState {
+  const ctx = React.useContext(SiweContext);
+  if (!ctx) throw new Error('useSiwe must be used inside <SiweProvider>');
+  return ctx;
+}
+
+export function SiweProvider({ children }: { children: React.ReactNode }) {
+  const { address, isConnected } = useAccount();
+  const chainId = useChainId();
+  const { signMessageAsync } = useSignMessage();
+
+  const [authedWallet, setAuthedWallet] = React.useState<string | null>(null);
+  const [status, setStatus] = React.useState<SiweState['status']>('loading');
+  const [error, setError] = React.useState<string | null>(null);
+
+  const refresh = React.useCallback(async () => {
+    try {
+      const res = await fetch('/api/siwe/session', { credentials: 'include', cache: 'no-store' });
+      if (!res.ok) {
+        setAuthedWallet(null);
+        setStatus('unauthenticated');
+        return;
+      }
+      const data = (await res.json()) as { wallet?: string };
+      setAuthedWallet(data.wallet ?? null);
+      setStatus(data.wallet ? 'authenticated' : 'unauthenticated');
+    } catch {
+      setAuthedWallet(null);
+      setStatus('unauthenticated');
+    }
+  }, []);
+
+  React.useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  const signOut = React.useCallback(async () => {
+    await fetch('/api/siwe/logout', { method: 'POST', credentials: 'include' });
+    resetSupabaseSession();
+    setAuthedWallet(null);
+    setStatus('unauthenticated');
+    setError(null);
+  }, []);
+
+  const signIn = React.useCallback(async (): Promise<boolean> => {
+    if (!address) {
+      setError('Connect a wallet first.');
+      return false;
+    }
+    setStatus('authenticating');
+    setError(null);
+
+    try {
+      const nonceRes = await fetch('/api/siwe/nonce', { credentials: 'include', cache: 'no-store' });
+      if (!nonceRes.ok) throw new Error('Could not start the sign-in challenge.');
+      const { nonce } = (await nonceRes.json()) as { nonce: string };
+
+      const message = createSiweMessage({
+        address,
+        // Must equal the Host header the server sees, or verification rejects it.
+        domain: window.location.host,
+        uri: window.location.origin,
+        // Pin to Arc, so a signature farmed elsewhere cannot be replayed here.
+        chainId: ARC_CHAIN_ID,
+        nonce,
+        version: '1',
+        statement:
+          'Sign in to PayNode. This proves you control this wallet. ' +
+          'It is free, does not touch your funds, and authorises no transactions.',
+        issuedAt: new Date(),
+        expirationTime: new Date(Date.now() + 10 * 60 * 1000),
+      });
+
+      const signature = await signMessageAsync({ message });
+
+      const verifyRes = await fetch('/api/siwe/verify', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message, signature }),
+      });
+
+      if (!verifyRes.ok) {
+        const { error: serverError } = (await verifyRes.json().catch(() => ({}))) as { error?: string };
+        throw new Error(serverError ?? 'Sign-in failed.');
+      }
+
+      // The memoised Supabase token is now stale — force the next call to pick up the new one.
+      resetSupabaseSession();
+      await refresh();
+      return true;
+    } catch (err) {
+      // A user dismissing the signature prompt is a choice, not a failure worth shouting about.
+      const msg = err instanceof Error ? err.message : 'Sign-in failed.';
+      setError(/rejected|denied|User rejected/i.test(msg) ? null : msg);
+      setStatus('unauthenticated');
+      return false;
+    }
+  }, [address, signMessageAsync, refresh]);
+
+  // If the user switches accounts in their wallet, the old session no longer represents
+  // them. Drop it immediately rather than letting them act under the previous identity.
+  React.useEffect(() => {
+    if (status !== 'authenticated' || !authedWallet) return;
+    if (!isConnected || !address) {
+      void signOut();
+      return;
+    }
+    if (address.toLowerCase() !== authedWallet) void signOut();
+  }, [address, isConnected, authedWallet, status, signOut]);
+
+  const value: SiweState = {
+    authedWallet,
+    status,
+    error,
+    needsSignIn: isConnected && status === 'unauthenticated',
+    signIn,
+    signOut,
+  };
+
+  return <SiweContext.Provider value={value}>{children}</SiweContext.Provider>;
+}
+
+/**
+ * Drop-in gate for any action that writes to Supabase.
+ * Renders a sign-in prompt when the wallet is connected but unverified.
+ */
+export function RequireSiwe({ children }: { children: React.ReactNode }) {
+  const { needsSignIn, signIn, status, error } = useSiwe();
+
+  if (!needsSignIn) return <>{children}</>;
+
+  return (
+    <div className="bg-[#0f172a]/80 border border-slate-800 rounded-2xl p-6 text-center">
+      <h3 className="text-white font-bold mb-2">Verify your wallet</h3>
+      <p className="text-slate-400 text-sm mb-5">
+        Sign a free message to prove you own this address. No transaction, no gas.
+      </p>
+      {error && <p className="text-red-400 text-sm mb-4">{error}</p>}
+      <button
+        onClick={() => void signIn()}
+        disabled={status === 'authenticating'}
+        className="bg-blue-600 hover:bg-blue-500 disabled:bg-slate-800 disabled:text-slate-500 text-white px-6 py-3 rounded-xl font-bold transition-all"
+      >
+        {status === 'authenticating' ? 'Check your wallet…' : 'Sign in with Ethereum'}
+      </button>
+    </div>
+  );
+}
