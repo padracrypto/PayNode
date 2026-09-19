@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAccount } from 'wagmi';
-import { supabase } from '../lib/supabase'; // Ensure this path is correct
+import { supabase } from '@/lib/supabase';
 
 export default function CreateProfilePage() {
   const router = useRouter();
@@ -30,7 +30,7 @@ export default function CreateProfilePage() {
   useEffect(() => {
     setMounted(true);
     if (isConnected && address) {
-      fetchExistingProfile(address);
+      fetchExistingProfile(address.toLowerCase());
     }
   }, [isConnected, address]);
 
@@ -110,7 +110,7 @@ export default function CreateProfilePage() {
           linkedin: socials.linkedin,
           website: socials.website
         })
-        .eq('wallet_address', address);
+        .eq('wallet_address', address.toLowerCase());
 
       if (updateError) throw updateError;
 

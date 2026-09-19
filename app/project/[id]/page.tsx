@@ -23,7 +23,6 @@ import {
   ProjectStatus,
   STATUS_LABEL,
   ResolutionPath,
-  PROTOCOL,
   ARC_CHAIN_ID,
   formatUSDC,
   formatCountdown,
@@ -43,11 +42,58 @@ const PATH_LABEL: Record<number, string> = {
 
 const short = (a?: string) => (a ? `${a.slice(0, 6)}…${a.slice(-4)}` : '');
 
+/**
+ * Shown when the project row cannot be read. Row-level security only lets the client, the
+ * builder and the designated arbitrator select a project, so for anyone else — or for a
+ * visitor who has not signed in — the query returns nothing. Without this the page sat on a
+ * loading spinner forever, which looked like a hang rather than a permissions answer.
+ */
+function AccessDenied({ signedIn }: { signedIn: boolean }) {
+  return (
+    <div className="min-h-[calc(100vh-80px)] w-full flex flex-col items-center justify-center px-6">
+      <div className="bg-red-950/20 border border-red-900/50 p-8 rounded-[2rem] max-w-lg w-full text-center shadow-2xl backdrop-blur-xl">
+        <div className="w-16 h-16 bg-red-500/10 rounded-2xl flex items-center justify-center mx-auto mb-6 border border-red-500/20">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-8 h-8 text-red-500">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z" />
+          </svg>
+        </div>
+        <h1 className="text-2xl font-black text-white mb-2">{signedIn ? 'Access Denied' : 'Sign in required'}</h1>
+        <p className="text-slate-400 text-sm mb-8">
+          {signedIn
+            ? 'This project does not exist, or you are not its client, builder or designated arbitrator.'
+            : 'Connect your wallet and sign in to view this project.'}
+        </p>
+        <Link
+          href="/dashboard"
+          className="w-full inline-block bg-[#050B14] hover:bg-slate-800 border border-slate-800 text-white py-4 rounded-xl font-bold transition-all shadow-lg"
+        >
+          Return to Dashboard
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The delivery link is typed by the builder and rendered as an <a href> for the client, so a
+ * `javascript:` URL would run in this origin on click. Only http(s) is allowed through.
+ */
+const safeHref = (url?: string | null): string | null => {
+  if (!url) return null;
+  try {
+    const u = new URL(url);
+    return u.protocol === 'http:' || u.protocol === 'https:' ? u.toString() : null;
+  } catch {
+    return null;
+  }
+};
+
 export default function ProjectPage() {
   const { id } = useParams();
   const { address } = useAccount();
   
   const [project, setProject] = useState<any>(null);
+  const [notFound, setNotFound] = useState(false);
   const [clientUsername, setClientUsername] = useState<string>('');
   const [builderUsername, setBuilderUsername] = useState<string>('');
 
@@ -66,6 +112,7 @@ export default function ProjectPage() {
   const [activeAction, setActiveAction] = useState<string | null>(null);
   const [banner, setBanner] = useState<{ kind: 'error' | 'info'; text: string } | null>(null);
   const [settlementBps, setSettlementBps] = useState<number>(5000);
+  const [rulingBps, setRulingBps] = useState<number>(5000);
   const { data: hash, error: writeError, writeContract } = useWriteContract();
   // `isSuccess` means the receipt was FETCHED, not that the transaction succeeded. viem
   // resolves waitForTransactionReceipt for reverted transactions too, so without the status
@@ -73,8 +120,8 @@ export default function ProjectPage() {
   // money was still in escrow, and the UI removed the button that would have released it.
   const {
     data: receipt,
-    isLoading: isConfirming,
     isSuccess: isMined,
+    error: receiptError,
   } = useWaitForTransactionReceipt({ hash });
   const isConfirmed = isMined && receipt?.status === 'success';
   const syncedRef = useRef<string | null>(null);
@@ -85,9 +132,11 @@ export default function ProjectPage() {
   const { authedWallet } = useSiwe();
   const wrongNetwork = !!address && chainId !== ARC_CHAIN_ID;
 
+  // Re-read when the SIWE session changes: a page opened before signing in gets nothing back
+  // from row-level security, and would otherwise stay empty until a manual refresh.
   useEffect(() => {
     fetchProject();
-  }, [id]);
+  }, [id, authedWallet]);
 
   // ------------------------------------------------------------------
   // ON-CHAIN STATE IS THE SOURCE OF TRUTH
@@ -111,6 +160,15 @@ export default function ProjectPage() {
   const { data: arbitratorAddr } = useReadContract({
     ...escrowContract,
     functionName: 'projectArbitrator',
+    args: pid !== undefined ? [pid] : undefined,
+    query: { enabled: pid !== undefined },
+  });
+
+  // The resolver key snapshotted for this project's epoch. Zero means automatic resolution is
+  // switched off, in which case the UI must not promise it.
+  const { data: resolverAddr } = useReadContract({
+    ...escrowContract,
+    functionName: 'resolverFor',
     args: pid !== undefined ? [pid] : undefined,
     query: { enabled: pid !== undefined },
   });
@@ -150,13 +208,29 @@ export default function ProjectPage() {
     [onchain, address, chainNow],
   );
 
+  // The Delivered/Completed cards are gated on CHAIN status, which refreshes every block, but
+  // `project` is a one-shot Supabase read. A client who already had this page open when the
+  // builder delivered saw the card appear with the stale (empty) notes and link. Re-read the
+  // row whenever the on-chain status moves so the two halves stay in step.
+  const onchainStatus = onchain?.status;
+  useEffect(() => {
+    if (onchainStatus === undefined) return;
+    void fetchProject();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onchainStatus]);
+
   const hasArbitrator = !!arbitratorAddr && arbitratorAddr !== zeroAddress;
+  const hasResolver = !!resolverAddr && resolverAddr !== zeroAddress;
   const offer = pendingOffer as readonly [`0x${string}`, number] | undefined;
   const hasOffer = !!offer && offer[0] !== zeroAddress;
 
   const isClient = act?.isClient ?? false;
   const isBuilder = act?.isBuilder ?? false;
-  const isUnauthorized = !isClient && !isBuilder && !!address && !!onchain;
+  // Decided from the CHAIN, which is what resolveDispute actually enforces — not the
+  // client-supplied `arbitrator` column in Supabase.
+  const isArbitrator =
+    hasArbitrator && !!address && (arbitratorAddr as string).toLowerCase() === address.toLowerCase();
+  const isUnauthorized = !isClient && !isBuilder && !isArbitrator && !!address && !!onchain;
 
   useEffect(() => {
     if (!project?.deadline) return;
@@ -232,6 +306,18 @@ export default function ProjectPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isConfirmed, isMined, receipt, activeAction, hash]);
 
+  // A dropped or replaced transaction never yields a receipt. Without this, `loading` stayed
+  // true forever and every action button on the page stayed disabled until a manual reload.
+  useEffect(() => {
+    if (!receiptError) return;
+    setLoading(false);
+    setActiveAction(null);
+    setBanner({
+      kind: 'error',
+      text: 'We could not confirm that transaction. Check its status on the explorer; if it went through, refresh this page.',
+    });
+  }, [receiptError]);
+
   useEffect(() => {
     if (!writeError) return;
     setLoading(false);
@@ -279,6 +365,7 @@ export default function ProjectPage() {
     args: readonly unknown[],
     action: string,
     statusText: string,
+    value?: bigint,
   ) => {
     if (pid === undefined) {
       setBanner({ kind: 'error', text: 'This project is not linked to the blockchain yet.' });
@@ -293,14 +380,22 @@ export default function ProjectPage() {
       ...escrowContract,
       functionName,
       args,
+      ...(value !== undefined ? { value } : {}),
     } as never);
   };
 
   const fetchProject = async () => {
     const { data } = await supabase.from('projects').select('*').eq('id', id).single();
+    if (!data) {
+      // RLS returns no row for a non-party or an unauthenticated visitor. If a project is
+      // already on screen a failed refetch must not blank it, so this only matters on first load.
+      setNotFound(true);
+      return;
+    }
     if (data) {
+      setNotFound(false);
       setProject(data);
-      
+
       const { data: profiles } = await supabase
         .from('profiles')
         .select('wallet_address, username')
@@ -327,8 +422,11 @@ export default function ProjectPage() {
    * release button. Those columns belong to the service-role indexer.
    */
   const updateProjectFields = async (fields: Record<string, unknown>) => {
-    const { error } = await supabase.from('projects').update(fields).eq('id', id);
+    // `.select('id')` matters: an UPDATE that RLS filters out returns `error: null` and zero
+    // rows, which is indistinguishable from success unless we ask for the affected rows back.
+    const { data, error } = await supabase.from('projects').update(fields).eq('id', id).select('id');
     if (error) throw error;
+    if (!data?.length) throw new Error('Project update matched no rows (blocked by RLS or wrong id).');
   };
 
   const sendNotification = async (receiverWallet: string, message: string, type: string) => {
@@ -363,10 +461,7 @@ export default function ProjectPage() {
     try {
       switch (activeAction) {
         case 'Delivered':
-          await updateProjectFields({
-            delivery_notes: deliveryData.notes,
-            delivery_links: deliveryData.links,
-          });
+          // Notes and links were saved in deliverWork() BEFORE the transaction was sent.
           await sendNotification(project.builder === authedWallet ? project.client : project.builder,
             `Work delivered for "${project.title}". Please review it.`, 'WORK_DELIVERED');
           break;
@@ -398,6 +493,12 @@ export default function ProjectPage() {
         case 'Disputed':
           await sendNotification(isClient ? project.builder : project.client,
             `A dispute was opened on "${project.title}".`, 'PROJECT_CANCELLED');
+          // The arbitrator is not a party to the project and would otherwise never learn
+          // that a ruling is being waited on.
+          if (hasArbitrator) {
+            await sendNotification((arbitratorAddr as string).toLowerCase(),
+              `Your ruling is needed on the dispute for "${project.title}".`, 'PROJECT_CANCELLED');
+          }
           break;
         case 'OfferSent':
           await sendNotification(isClient ? project.builder : project.client,
@@ -405,6 +506,7 @@ export default function ProjectPage() {
           break;
         case 'Settled':
         case 'ForceResolved':
+        case 'Ruled':
         case 'OfferWithdrawn':
           // Fully chain-derived; the indexer records the outcome.
           break;
@@ -427,8 +529,11 @@ export default function ProjectPage() {
   const isPastDeadline = act?.pastDeadline ?? false;
 
   // ---------------- actions (all routed through the guarded `send`) ----------------
+  // fundProject is payable: msg.value must equal the project's registered amount EXACTLY
+  // or the contract reverts with WrongValue. Read it from the chain (`onchain.amount`), not
+  // from Supabase's amount_wei — the DB value is only a display mirror and can drift.
   const fundEscrow = () =>
-    send('fundProject', [pid!], 'Funded', 'Confirm in your wallet…');
+    send('fundProject', [pid!], 'Funded', 'Confirm in your wallet…', onchain?.amount);
 
   const executeReleaseFunds = () => {
     setShowRatingModal(false);
@@ -459,14 +564,59 @@ export default function ProjectPage() {
     return send('builderCancel', [pid!], 'Refunded_Builder', 'Refunding client…');
   };
 
-  const deliverWork = () => {
+  const deliverWork = async () => {
     if (!deliveryData.links) { setBanner({ kind: 'error', text: 'Add a link to your deliverable.' }); return; }
+    if (!safeHref(deliveryData.links)) { setBanner({ kind: 'error', text: 'The delivery link must start with http:// or https://.' }); return; }
+
+    // Save the notes and link FIRST. Doing it after the receipt meant a closed tab, a page
+    // refresh or a failed write left the on-chain status at Delivered with nothing for the
+    // client to review. If this fails we stop before the builder spends gas.
+    setLoading(true);
+    setTxStatus('Saving delivery details…');
+    try {
+      await updateProjectFields({
+        delivery_notes: deliveryData.notes,
+        delivery_links: deliveryData.links,
+      });
+    } catch (err) {
+      console.error('Saving delivery details failed:', err);
+      setLoading(false);
+      setTxStatus('');
+      setBanner({ kind: 'error', text: 'Could not save your delivery notes and link. Nothing was sent on-chain — please try again.' });
+      return;
+    }
     return send('markDelivered', [pid!], 'Delivered', 'Recording delivery…');
   };
 
   // ---------------- dispute + settlement (the four resolution paths) ----------------
-  const raiseDispute = () =>
-    send('raiseDispute', [pid!], 'Disputed', 'Opening dispute…');
+  // Opening a dispute freezes the escrow with no undo, so it gets the same confirmation the
+  // cancel and decline actions have. The wording follows the contract: a client can only
+  // dispute delivered work (stale outcome 50/50), while a builder can dispute earlier — and
+  // if that goes stale before delivery, the client is refunded in full.
+  const raiseDispute = () => {
+    const delivered = onchain?.status === ProjectStatus.Delivered;
+    const staleOutcome = delivered
+      ? 'If it is not resolved within 30 days, the funds are split 50/50.'
+      : 'The work has not been delivered, so if it is not resolved within 30 days the client is refunded in full.';
+    const who = hasArbitrator ? 'the designated arbitrator, an agreement between you,' : 'an agreement between you';
+    const ok = window.confirm(
+      `Open a dispute?\n\nThe escrowed funds are frozen until it is resolved by ${who} or the 30-day timeout. ` +
+        `You cannot release or refund the project in the meantime.\n\n${staleOutcome}`,
+    );
+    if (!ok) return;
+    return send('raiseDispute', [pid!], 'Disputed', 'Opening dispute…');
+  };
+
+  // Path 1. Only the designated arbitrator can call this on-chain; the button is gated on the
+  // same check. The ruling pays out immediately and cannot be revised.
+  const resolveAsArbitrator = () => {
+    const ok = window.confirm(
+      `Submit your ruling?\n\n${rulingBps / 100}% to the builder and ${(10000 - rulingBps) / 100}% refunded to the client. ` +
+        'This pays out immediately and is final.',
+    );
+    if (!ok) return;
+    return send('resolveDispute', [pid!, rulingBps], 'Ruled', 'Submitting ruling…');
+  };
 
   const proposeSettlement = () =>
     send('proposeSettlement', [pid!, settlementBps], 'OfferSent', 'Sending offer…');
@@ -481,35 +631,16 @@ export default function ProjectPage() {
     send('forceResolveStaleDispute', [pid!], 'ForceResolved', 'Settling dispute…');
 
 
-  if (!project) return (
-    <div className="min-h-[calc(100vh-80px)] w-full flex items-center justify-center">
-      <span className="w-8 h-8 rounded-full border-4 border-slate-800 border-t-blue-500 animate-spin"></span>
-    </div>
-  );
-
-  if (isUnauthorized) {
+  if (!project) {
+    if (notFound) return <AccessDenied signedIn={!!authedWallet} />;
     return (
-      <div className="min-h-[calc(100vh-80px)] w-full flex flex-col items-center justify-center px-6">
-        <div className="bg-red-950/20 border border-red-900/50 p-8 rounded-[2rem] max-w-lg w-full text-center shadow-2xl backdrop-blur-xl">
-          <div className="w-16 h-16 bg-red-500/10 rounded-2xl flex items-center justify-center mx-auto mb-6 border border-red-500/20">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-8 h-8 text-red-500">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z" />
-            </svg>
-          </div>
-          <h1 className="text-2xl font-black text-white mb-2">Access Denied</h1>
-          <p className="text-slate-400 text-sm mb-8">
-            You do not have permission to view this smart contract. Only the authorized client or builder can access this page.
-          </p>
-          <Link 
-            href="/dashboard"
-            className="w-full inline-block bg-[#050B14] hover:bg-slate-800 border border-slate-800 text-white py-4 rounded-xl font-bold transition-all shadow-lg"
-          >
-            Return to Dashboard
-          </Link>
-        </div>
+      <div className="min-h-[calc(100vh-80px)] w-full flex items-center justify-center">
+        <span className="w-8 h-8 rounded-full border-4 border-slate-800 border-t-blue-500 animate-spin"></span>
       </div>
     );
   }
+
+  if (isUnauthorized) return <AccessDenied signedIn={!!authedWallet} />;
 
   return (
     <div className="w-full max-w-5xl mx-auto px-6 py-12 space-y-6 relative">
@@ -675,16 +806,45 @@ export default function ProjectPage() {
               <div>
                 <h3 className="text-amber-400 font-black text-lg mb-1">Dispute open</h3>
                 <p className="text-sm text-slate-400">
-                  {hasArbitrator ? (
+                  {isArbitrator ? (
+                    <>You are the designated arbitrator for this project. Your ruling is final.</>
+                  ) : hasArbitrator ? (
                     <>
                       Awaiting a ruling from the agreed arbitrator{' '}
-                      <span className="font-mono text-slate-300">{short(arbitratorAddr as string)}</span>.
+                      <span className="font-mono text-slate-300">{short(arbitratorAddr as string)}</span>. You can also
+                      settle directly with the other party.
+                    </>
+                  ) : hasResolver ? (
+                    <>
+                      No arbitrator was named for this project, so the platform resolver may issue a ruling. You can
+                      also settle directly with the other party.
                     </>
                   ) : (
-                    <>Awaiting automatic resolution. You can also settle directly with the other party.</>
+                    <>
+                      No arbitrator was named and automatic resolution is not enabled. Settle directly with the other
+                      party — or, if you cannot agree, anyone can settle it after 30 days.
+                    </>
                   )}
                 </p>
               </div>
+
+              {/* ---- PATH 1: the designated arbitrator's ruling ---- */}
+              {isArbitrator && (
+                <div className="bg-[#050B14] border border-amber-900/50 rounded-2xl p-5">
+                  <p className="text-white font-bold text-sm mb-3">Your ruling</p>
+                  <input type="range" min={0} max={10000} step={100} value={rulingBps}
+                         onChange={(e) => setRulingBps(Number(e.target.value))}
+                         className="w-full accent-amber-500 mb-2" />
+                  <div className="flex justify-between text-xs text-slate-400 mb-4">
+                    <span>Client refunded {(10000 - rulingBps) / 100}%</span>
+                    <span>Builder paid {rulingBps / 100}%</span>
+                  </div>
+                  <button onClick={resolveAsArbitrator} disabled={loading}
+                          className="w-full bg-amber-600 hover:bg-amber-500 text-white py-3 rounded-xl font-bold text-sm">
+                    {loading ? txStatus : 'Submit ruling'}
+                  </button>
+                </div>
+              )}
 
               {/* ---- PATH 3: mutual 2-of-2, needs no third party at all ---- */}
               {act?.canProposeSettlement && (
@@ -764,6 +924,26 @@ export default function ProjectPage() {
               </button>
             </div>
           )}
+
+          {/* How a dispute ended. A 50/50 settlement is recorded on-chain as Completed and a full
+              refund as Refunded, so the bare status alone hides who got what. These columns are
+              written by the indexer from the DisputeResolved event. */}
+          {project.resolution_path != null &&
+            (onchain?.status === ProjectStatus.Completed || onchain?.status === ProjectStatus.Refunded) && (
+              <div className="mb-4 bg-amber-950/20 border border-amber-900/50 p-5 rounded-2xl">
+                <h3 className="text-amber-400 font-bold text-sm mb-1">Dispute resolved</h3>
+                <p className="text-sm text-slate-400">
+                  Settled by {PATH_LABEL[project.resolution_path] ?? 'the escrow contract'}
+                  {project.resolution_builder_bps != null && (
+                    <>
+                      {' '}— {project.resolution_builder_bps / 100}% to the builder,{' '}
+                      {(10000 - project.resolution_builder_bps) / 100}% refunded to the client
+                    </>
+                  )}
+                  .
+                </p>
+              </div>
+            )}
 
           {onchain?.status === ProjectStatus.Cancelled && (
              <div className="text-center py-4">
@@ -864,8 +1044,12 @@ export default function ProjectPage() {
               </h2>
               
               <div className="bg-[#0f172a] p-5 rounded-2xl border border-slate-800/80 mb-6 text-sm text-slate-300">
-                <p className="mb-4"><strong className="text-slate-500 uppercase text-xs tracking-wider block mb-1">Notes:</strong>{project.delivery_notes}</p>
-                <p><strong className="text-slate-500 uppercase text-xs tracking-wider block mb-1">Link:</strong><a href={project.delivery_links} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 hover:underline break-all">{project.delivery_links}</a></p>
+                <p className="mb-4"><strong className="text-slate-500 uppercase text-xs tracking-wider block mb-1">Notes:</strong>{project.delivery_notes || <span className="text-slate-500 italic">No notes provided.</span>}</p>
+                <p><strong className="text-slate-500 uppercase text-xs tracking-wider block mb-1">Link:</strong>{safeHref(project.delivery_links)
+                  ? <a href={safeHref(project.delivery_links)!} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 hover:underline break-all">{project.delivery_links}</a>
+                  : project.delivery_links
+                    ? <span className="break-all">{project.delivery_links}</span>
+                    : <span className="text-slate-500 italic">No link recorded.</span>}</p>
               </div>
               
               {isClient && onchain?.status === ProjectStatus.Delivered && !isRevisionMode && (

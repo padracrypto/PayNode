@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter, useParams } from 'next/navigation';
 import { useAccount, useSendTransaction, useWaitForTransactionReceipt } from 'wagmi';
 import { parseEther } from 'viem';
-import { supabase } from '@/app/lib/supabase';
+import { supabase } from '@/lib/supabase';
 
 export default function SendTipPage() {
   const { username } = useParams();
@@ -82,13 +82,14 @@ export default function SendTipPage() {
   };
 
   const syncTipToDatabase = async () => {
+    if (!senderAddress) return;
     setIsSyncing(true);
     try {
       const { error: tipError } = await supabase
         .from('tips')
         .insert([
           {
-            sender_wallet: senderAddress,
+            sender_wallet: senderAddress.toLowerCase(),
             receiver_wallet: profile.wallet_address,
             amount: parseFloat(amount),
             message: message,
@@ -153,7 +154,7 @@ export default function SendTipPage() {
               </svg>
             </div>
             <h1 className="text-2xl font-black text-white tracking-tight mb-1">Send Tip</h1>
-            <p className="text-slate-400 text-sm">Support <span className="text-white font-bold">@{username}</span>'s work directly via ARC network.</p>
+            <p className="text-slate-400 text-sm">Support <span className="text-white font-bold">@{username}</span>&apos;s work directly via ARC network.</p>
           </div>
 
           {displayError && (

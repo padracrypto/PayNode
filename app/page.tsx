@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAccount } from 'wagmi';
-import { supabase } from '../lib/supabase';
+import { supabase } from '@/lib/supabase';
 
 export default function HomePage() {
   const router = useRouter();
@@ -22,10 +22,10 @@ export default function HomePage() {
     setIsRouting(true);
     
     try {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from('profiles')
         .select('username')
-        .eq('wallet_address', address)
+        .eq('wallet_address', address.toLowerCase())
         .maybeSingle();
 
       if (data && data.username) {

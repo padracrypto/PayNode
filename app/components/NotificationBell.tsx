@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAccount } from 'wagmi';
-import { supabase } from '../lib/supabase';
+import { supabase } from '@/lib/supabase';
 
 interface Notification {
   id: string;
@@ -17,7 +17,10 @@ interface Notification {
 
 export default function NotificationBell() {
   const router = useRouter();
-  const { address: walletAddress } = useAccount();
+  const { address: connectedAddress } = useAccount();
+  // DB stores wallet_address lowercase (profiles_wallet_lowercase etc.); wagmi returns
+  // an EIP-55 checksummed address, so every query/filter below must lowercase it first.
+  const walletAddress = connectedAddress?.toLowerCase();
 
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);

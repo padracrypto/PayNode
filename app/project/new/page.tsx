@@ -239,9 +239,18 @@ function ProjectForm() {
       if (sbError) throw sbError;
       if (data) router.push(`/project/${data.id}`);
     } catch (err) {
+      // supabase-js resolves `{ error }` as a plain object, not an Error instance, unless
+      // .throwOnError() is used (it isn't here) — `err instanceof Error` was always false for
+      // a failed insert, silently discarding the actual RLS/constraint message with nothing
+      // logged anywhere. Pull `.message` off whatever shape came back instead of gating on it.
+      console.error('[project/new] Failed to save project after on-chain confirmation:', err);
+      const detail =
+        err && typeof err === 'object' && 'message' in err && typeof err.message === 'string'
+          ? err.message
+          : null;
       setLocalError(
-        err instanceof Error
-          ? `Project created on-chain, but saving it failed: ${err.message}`
+        detail
+          ? `Project created on-chain, but saving it failed: ${detail}`
           : 'Project created on-chain, but saving it failed.',
       );
       setIsSyncing(false);

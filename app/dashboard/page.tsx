@@ -7,7 +7,7 @@ import { useRouter } from 'next/navigation';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { formatUSDC, formatAmount } from '@/lib/paynode';
-import { useSiwe } from '@/app/providers/SiweProvider';
+import { useSiwe, RequireSiwe } from '@/app/providers/SiweProvider';
 
 interface Project {
   id: string;
@@ -43,9 +43,9 @@ const byNewest = <T extends { created_at?: string }>(a: T, b: T) =>
   (b.created_at ? Date.parse(b.created_at) : 0) - (a.created_at ? Date.parse(a.created_at) : 0);
 
 export default function DashboardPage() {
-  const { address, isConnected } = useAccount();
+  const { address, isConnected, status: accountStatus } = useAccount();
   const router = useRouter();
-  const { authedWallet, status: authStatus } = useSiwe();
+  const { authedWallet, status: authStatus, needsSignIn } = useSiwe();
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -55,8 +55,30 @@ export default function DashboardPage() {
   // The VERIFIED wallet, not the connected one. Querying by useAccount().address would show
   // data for an address the server has not authenticated — and under the RLS policies in
   // migration 0001 those queries return nothing anyway, since the JWT drives every filter.
-  const wallet = authedWallet;
-  const ready = mounted && isConnected && authStatus === 'authenticated' && !!wallet;
+  // Always lowercase: the session, the JWT `wallet` claim, and every DB column are lowercase.
+  const wallet = authedWallet?.toLowerCase() ?? null;
+  const connectedWallet = address?.toLowerCase() ?? null;
+
+  // True until we know, definitively, whether there is a session. Covers the refresh window
+  // where wagmi is still reconnecting and/or /api/siwe/session has not answered yet. Without
+  // it that window rendered as "Builder / 0 contracts / 0 tips", identical to a real empty
+  // account.
+  const sessionPending =
+    !mounted ||
+    accountStatus === 'connecting' ||
+    accountStatus === 'reconnecting' ||
+    authStatus === 'loading' ||
+    authStatus === 'authenticating';
+
+  // Queries fire only once the wallet is connected AND the server-verified session belongs to
+  // that same wallet. The address match closes the account-switch gap, where the old session
+  // lingers for a render before SiweProvider drops it.
+  const ready =
+    !sessionPending &&
+    isConnected &&
+    authStatus === 'authenticated' &&
+    !!wallet &&
+    wallet === connectedWallet;
 
   // ---------------------------------------------------------------------------
   // Keying every query by wallet is what prevents the stale-data leak: on account
@@ -127,7 +149,11 @@ export default function DashboardPage() {
 
   // Show the skeleton only on a true cold load. During background refetches the previous
   // data is still rendered, so nothing flickers.
-  const isLoading = ready && (projectsQuery.isPending || tipsQuery.isPending);
+  // Also waiting while a stale session lingers for a different wallet — SiweProvider is about
+  // to drop it, and until then neither the old nor the new identity's data may be shown.
+  const awaitingSession = sessionPending || (isConnected && authStatus === 'authenticated' && !ready);
+  const isLoading = awaitingSession || (ready && (projectsQuery.isPending || tipsQuery.isPending));
+  const profileLoading = awaitingSession || (ready && profileQuery.isPending);
   const isRefreshing = projectsQuery.isFetching || tipsQuery.isFetching;
   const loadError = projectsQuery.error ?? tipsQuery.error;
 
@@ -162,13 +188,34 @@ export default function DashboardPage() {
 
   const scrollbarClasses = "max-h-[380px] overflow-y-auto pr-3 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-slate-700 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-slate-600";
 
+  // Settled and definitively not usable: say so, rather than rendering an empty dashboard
+  // that looks like an account with no activity.
+  if (!awaitingSession && !isConnected) {
+    return (
+      <div className="flex-1 w-full max-w-xl mx-auto px-6 py-20 text-center">
+        <h1 className="text-2xl font-black text-white mb-2">Connect your wallet</h1>
+        <p className="text-slate-500 text-sm">Connect a wallet to see your contracts and tips.</p>
+      </div>
+    );
+  }
+
+  if (!awaitingSession && needsSignIn) {
+    return (
+      <div className="flex-1 w-full max-w-xl mx-auto px-6 py-20">
+        <RequireSiwe>{null}</RequireSiwe>
+      </div>
+    );
+  }
+
   return (
     <div className="flex-1 w-full max-w-7xl mx-auto px-6 py-10 text-slate-300">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-12">
         <div>
           <h1 className="text-3xl font-black text-white tracking-tight mb-1 flex items-center gap-2">
             Welcome back,{' '}
-            {mounted && isConnected ? (
+            {profileLoading ? (
+              <span className="inline-block h-7 w-28 rounded-lg bg-slate-800 animate-pulse align-middle" aria-label="Loading" />
+            ) : mounted && isConnected ? (
               username ? (
                 <Link href={`/${username}`} className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400 hover:opacity-80 transition-opacity">
                   @{username}
@@ -225,7 +272,7 @@ export default function DashboardPage() {
             {isRefreshing && <span className="w-2 h-2 rounded-full bg-blue-400/60 animate-pulse" title="Syncing" />}
           </p>
           <div className="flex items-baseline gap-2">
-            <span className="text-4xl font-black text-white">${totalLockedAmount}</span>
+            <span className="text-4xl font-black text-white">{isLoading ? '—' : `$${totalLockedAmount}`}</span>
             <span className="text-xs font-bold text-slate-500">USDC</span>
           </div>
         </div>
@@ -233,7 +280,7 @@ export default function DashboardPage() {
         <div className="bg-[#0f172a]/60 border border-slate-800 p-6 rounded-3xl backdrop-blur-sm relative overflow-hidden group">
           <p className="text-slate-400 text-sm font-bold mb-2">Total Tips Received</p>
           <div className="flex items-baseline gap-2">
-            <span className="text-4xl font-black text-emerald-400">${totalTips}</span>
+            <span className="text-4xl font-black text-emerald-400">{isLoading ? '—' : `$${totalTips}`}</span>
             <span className="text-xs font-bold text-slate-500">USDC</span>
           </div>
         </div>
@@ -241,7 +288,7 @@ export default function DashboardPage() {
         <div className="bg-[#0f172a]/60 border border-slate-800 p-6 rounded-3xl backdrop-blur-sm relative overflow-hidden group">
           <p className="text-slate-400 text-sm font-bold mb-2">Active Contracts</p>
           <div className="flex items-baseline gap-2">
-            <span className="text-4xl font-black text-white">{activeContractsCount}</span>
+            <span className="text-4xl font-black text-white">{isLoading ? '—' : activeContractsCount}</span>
             <span className="text-xs font-bold text-slate-500">Ongoing</span>
           </div>
         </div>
@@ -256,7 +303,7 @@ export default function DashboardPage() {
               Active Escrow Contracts
             </h2>
 
-            {!mounted || isLoading ? (
+            {isLoading ? (
               <div className="p-10 border border-slate-800 border-dashed rounded-3xl text-center">
                 <p className="text-slate-500 font-bold animate-pulse">Syncing with blockchain data...</p>
               </div>
@@ -274,7 +321,7 @@ export default function DashboardPage() {
                         <h3 className="text-lg font-bold text-white mb-1">{project.title}</h3>
                         <p className="text-sm text-slate-500 flex items-center gap-2">
                           Role: <span className="text-blue-400 font-mono">
-                            {project.client?.toLowerCase() === address?.toLowerCase() ? 'Client' : 'Builder'}
+                            {project.client?.toLowerCase() === wallet ? 'Client' : 'Builder'}
                           </span>
                         </p>
                       </div>
@@ -313,7 +360,7 @@ export default function DashboardPage() {
                         <h3 className="text-lg font-bold text-slate-200 mb-1">{project.title}</h3>
                         <p className="text-sm text-slate-500 flex items-center gap-2">
                           Role: <span className="text-slate-400 font-mono">
-                            {project.client?.toLowerCase() === address?.toLowerCase() ? 'Client' : 'Builder'}
+                            {project.client?.toLowerCase() === wallet ? 'Client' : 'Builder'}
                           </span>
                         </p>
                       </div>
@@ -359,7 +406,7 @@ export default function DashboardPage() {
                       </span>
                     </div>
                     {tip.message && (
-                      <p className="text-sm text-slate-300 italic mb-2 break-words">"{tip.message}"</p>
+                      <p className="text-sm text-slate-300 italic mb-2 break-words">&ldquo;{tip.message}&rdquo;</p>
                     )}
                     <div className="text-right">
                       <span className="text-[10px] text-slate-500 font-mono uppercase tracking-widest">

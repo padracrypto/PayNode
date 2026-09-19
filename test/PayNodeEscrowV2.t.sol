@@ -2,7 +2,7 @@
 pragma solidity 0.8.26;
 
 import {Test} from "forge-std/Test.sol";
-import {PayNodeEscrowV2} from "../src/PayNodeEscrowV2.sol";
+import {PayNodeEscrowV2} from "../contracts/PayNodeEscrowV2.sol";
 
 contract Reverter {
     receive() external payable { revert("nope"); }

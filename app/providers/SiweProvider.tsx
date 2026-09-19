@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { useAccount, useSignMessage, useChainId } from 'wagmi';
+import { useAccount, useSignMessage } from 'wagmi';
 import { createSiweMessage } from 'viem/siwe';
 import { ARC_CHAIN_ID } from '@/lib/paynode';
 import { resetSupabaseSession } from '@/lib/supabase';
@@ -35,9 +35,11 @@ export function useSiwe(): SiweState {
 }
 
 export function SiweProvider({ children }: { children: React.ReactNode }) {
-  const { address, isConnected } = useAccount();
-  const chainId = useChainId();
+  const { address, isConnected, status: accountStatus } = useAccount();
   const { signMessageAsync } = useSignMessage();
+  // Whether wagmi has reported a live connection during this page load. Used to tell a user
+  // who disconnected apart from a page that simply has not reconnected yet.
+  const wasConnected = React.useRef(false);
 
   const [authedWallet, setAuthedWallet] = React.useState<string | null>(null);
   const [status, setStatus] = React.useState<SiweState['status']>('loading');
@@ -130,14 +132,27 @@ export function SiweProvider({ children }: { children: React.ReactNode }) {
 
   // If the user switches accounts in their wallet, the old session no longer represents
   // them. Drop it immediately rather than letting them act under the previous identity.
+  //
+  // On a hard refresh wagmi starts in 'connecting'/'reconnecting' with isConnected === false
+  // while /api/siwe/session is already in flight. Treating that gap as a disconnect used to
+  // call signOut() whenever the session fetch won the race, wiping the still-valid cookie
+  // and leaving the dashboard empty. Only a definitive state may end the session.
   React.useEffect(() => {
+    if (accountStatus === 'connected') wasConnected.current = true;
+
     if (status !== 'authenticated' || !authedWallet) return;
-    if (!isConnected || !address) {
-      void signOut();
+
+    if (accountStatus === 'connected' && address) {
+      if (address.toLowerCase() !== authedWallet) void signOut();
       return;
     }
-    if (address.toLowerCase() !== authedWallet) void signOut();
-  }, [address, isConnected, authedWallet, status, signOut]);
+
+    // A real disconnect: we watched the wallet connect and it is now definitively gone.
+    if (accountStatus === 'disconnected' && wasConnected.current) {
+      wasConnected.current = false;
+      void signOut();
+    }
+  }, [address, accountStatus, authedWallet, status, signOut]);
 
   const value: SiweState = {
     authedWallet,

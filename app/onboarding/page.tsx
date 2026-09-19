@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAccount } from 'wagmi';
-import { supabase } from '../lib/supabase'; // Ensure this path is correct
+import { supabase } from '@/lib/supabase';
 
 export default function OnboardingPage() {
   const router = useRouter();
@@ -58,7 +58,7 @@ export default function OnboardingPage() {
         throw new Error(checkError.message);
       }
 
-      if (existingUser && existingUser.wallet_address !== address) {
+      if (existingUser && existingUser.wallet_address !== address.toLowerCase()) {
         setError('This username is already taken. Please choose another one.');
         setLoading(false);
         return;
@@ -70,7 +70,7 @@ export default function OnboardingPage() {
         .upsert(
           [
             {
-              wallet_address: address, // Using the real connected wallet
+              wallet_address: address.toLowerCase(), // DB requires lowercase (profiles_wallet_lowercase)
               username: normalizedUsername,
               role: formData.role
             }

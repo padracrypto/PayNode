@@ -1,6 +1,6 @@
-import 'server-only';
-
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { randomUUID } from 'node:crypto';
+import { createClient, type RealtimeClientOptions, type SupabaseClient } from '@supabase/supabase-js';
+import WebSocket from 'ws';
 import { createPublicClient, decodeEventLog, http, fallback, type Log } from 'viem';
 import { arc, ARC_RPC_URLS, ESCROW_ADDRESS, PAYNODE_ESCROW_ABI } from '../paynode';
 
@@ -45,6 +45,13 @@ const DEPLOY_BLOCK = BigInt(process.env.NEXT_PUBLIC_ESCROW_DEPLOY_BLOCK ?? 0);
 
 const STREAM_ID = 'escrow';
 
+/**
+ * Lease length for the run lock (migration 0004). Must exceed the route's maxDuration, so a
+ * function killed mid-run has its lease expire rather than block the schedule indefinitely.
+ * Every cursor advance renews it, so a healthy long backfill never loses it.
+ */
+const LOCK_TTL_SECONDS = 75;
+
 /** DB status strings. These are the values the UI reads; keep them stable. */
 const Status = {
   AwaitingFunds: 'AwaitingFunds',
@@ -68,7 +75,14 @@ export function serviceClient(): SupabaseClient {
     throw new Error('[indexer] NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required.');
   }
   // The service role bypasses RLS entirely. This key must never reach a browser.
-  return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
+  //
+  // This client never opens a realtime channel, but supabase-js's constructor still probes
+  // for a global WebSocket and throws immediately on Node < 22 if it can't find one. `ws`
+  // supplies that constructor so createClient() doesn't hard-fail on older Node runtimes.
+  return createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+    realtime: { transport: WebSocket as RealtimeClientOptions['transport'] },
+  });
 }
 
 export const chainClient = createPublicClient({
@@ -181,11 +195,66 @@ export type IndexerResult = {
   deferredRecorded: number;
   tipsVerified: number;
   caughtUp: boolean;
+  /** True when another run held the lease, so this invocation did nothing. Not an error. */
+  lockedOut: boolean;
 };
 
-export async function runIndexerOnce(): Promise<IndexerResult> {
-  const db = serviceClient();
+export type IndexerOptions = {
+  /** Stop starting new work after this many ms. The cursor is saved per range, so stopping
+   *  early is safe — the next run resumes exactly where this one left off. */
+  budgetMs?: number;
+};
 
+const emptyResult = (over: Partial<IndexerResult> = {}): IndexerResult => ({
+  fromBlock: '0',
+  toBlock: '0',
+  logsSeen: 0,
+  eventsApplied: 0,
+  eventsSkipped: 0,
+  deferredRecorded: 0,
+  tipsVerified: 0,
+  caughtUp: true,
+  lockedOut: false,
+  ...over,
+});
+
+/**
+ * One indexer pass, guarded by a lease so overlapping invocations cannot both run.
+ *
+ * Vercel cron delivery is best-effort and can fire the same schedule twice, and a run that
+ * outlives its interval overlaps the next one. Without the lease, both would fetch and
+ * re-apply the same blocks, and a slow run could write an older cursor over a newer one.
+ */
+export async function runIndexerOnce(opts: IndexerOptions = {}): Promise<IndexerResult> {
+  const db = serviceClient();
+  const owner = randomUUID();
+  const deadline = opts.budgetMs ? Date.now() + opts.budgetMs : Number.POSITIVE_INFINITY;
+
+  const { data: acquired, error: lockErr } = await db.rpc('acquire_indexer_lock', {
+    p_id: STREAM_ID,
+    p_owner: owner,
+    p_ttl_seconds: LOCK_TTL_SECONDS,
+  });
+  // Fail loudly rather than silently run unlocked if migration 0004 is missing.
+  if (lockErr) {
+    throw new Error(`[indexer] cannot acquire lock (has migration 0004 been applied?): ${lockErr.message}`);
+  }
+  if (!acquired) return emptyResult({ lockedOut: true });
+
+  try {
+    return await runLocked(db, owner, deadline);
+  } finally {
+    try {
+      await db.rpc('release_indexer_lock', { p_id: STREAM_ID, p_owner: owner });
+    } catch {
+      // A failed release only means the lease runs out on its own.
+    }
+  }
+}
+
+async function runLocked(db: SupabaseClient, owner: string, deadline: number): Promise<IndexerResult> {
+  // Read the cursor only AFTER the lease is held; reading it first would let two runs start
+  // from the same value.
   const { data: state, error: stateErr } = await db
     .from('indexer_state')
     .select('last_indexed_block')
@@ -197,18 +266,11 @@ export async function runIndexerOnce(): Promise<IndexerResult> {
   const safeHead = head > CONFIRMATIONS ? head - CONFIRMATIONS : 0n;
 
   const cursor = BigInt(state?.last_indexed_block ?? 0);
-  let fromBlock = cursor > 0n ? cursor + 1n : DEPLOY_BLOCK;
+  const fromBlock = cursor > 0n ? cursor + 1n : DEPLOY_BLOCK;
   if (fromBlock > safeHead) {
-    return {
-      fromBlock: fromBlock.toString(),
-      toBlock: safeHead.toString(),
-      logsSeen: 0,
-      eventsApplied: 0,
-      eventsSkipped: 0,
-      deferredRecorded: 0,
-      tipsVerified: 0,
-      caughtUp: true,
-    };
+    // Nothing new to read, but tips are verified by tx hash and need no logs.
+    const tipsVerified = await verifyPendingTips(db, safeHead, deadline);
+    return emptyResult({ fromBlock: fromBlock.toString(), toBlock: safeHead.toString(), tipsVerified });
   }
 
   const ceiling = safeHead - fromBlock > MAX_BLOCKS_PER_RUN ? fromBlock + MAX_BLOCKS_PER_RUN : safeHead;
@@ -220,6 +282,9 @@ export async function runIndexerOnce(): Promise<IndexerResult> {
   let highestDone = cursor;
 
   for (let start = fromBlock; start <= ceiling; start += MAX_RANGE) {
+    // Out of time budget: stop cleanly. Ranges completed so far are already saved.
+    if (Date.now() > deadline) break;
+
     const end = start + MAX_RANGE - 1n > ceiling ? ceiling : start + MAX_RANGE - 1n;
 
     const logs = await chainClient.getLogs({
@@ -254,7 +319,12 @@ export async function runIndexerOnce(): Promise<IndexerResult> {
           },
           { onConflict: 'tx_hash,log_index', ignoreDuplicates: true },
         );
-        if (!error) deferred++;
+        // Throw, don't swallow: the cursor advances past this range once the pass completes,
+        // so a dropped write here would lose the record of a user's claimable funds for good.
+        if (error) {
+          throw new Error(`[indexer] deferred_payments upsert failed at ${log.blockNumber}/${log.logIndex}: ${error.message}`);
+        }
+        deferred++;
         continue;
       }
 
@@ -284,14 +354,23 @@ export async function runIndexerOnce(): Promise<IndexerResult> {
 
     highestDone = end;
 
-    const { error: cursorErr } = await db
-      .from('indexer_state')
-      .update({ last_indexed_block: Number(highestDone), updated_at: new Date().toISOString() })
-      .eq('id', STREAM_ID);
+    // Advance AND renew the lease in one atomic call. The database only moves the cursor
+    // forward, and only for the current lease holder.
+    const { data: advanced, error: cursorErr } = await db.rpc('advance_indexer_cursor', {
+      p_id: STREAM_ID,
+      p_owner: owner,
+      p_block: Number(highestDone),
+      p_ttl_seconds: LOCK_TTL_SECONDS,
+    });
     if (cursorErr) throw new Error(`[indexer] cannot advance cursor: ${cursorErr.message}`);
+    if (!advanced) {
+      // The lease expired and another run took over. Stop at once; carrying on would apply
+      // logs concurrently with the run that replaced us.
+      throw new Error('[indexer] lost the run lease mid-pass; aborting so the new holder continues.');
+    }
   }
 
-  const tipsVerified = await verifyPendingTips(db, safeHead);
+  const tipsVerified = await verifyPendingTips(db, safeHead, deadline);
 
   return {
     fromBlock: fromBlock.toString(),
@@ -302,6 +381,7 @@ export async function runIndexerOnce(): Promise<IndexerResult> {
     deferredRecorded: deferred,
     tipsVerified,
     caughtUp: highestDone >= safeHead,
+    lockedOut: false,
   };
 }
 
@@ -330,19 +410,31 @@ function decodeSafely(log: Log): { eventName: string; args: Record<string, unkno
  * The amount is taken FROM THE TRANSACTION, never from the row. tips.amount is a
  * sender-supplied float; tips.amount_wei is what really moved.
  */
-async function verifyPendingTips(db: SupabaseClient, safeHead: bigint): Promise<number> {
+async function verifyPendingTips(db: SupabaseClient, safeHead: bigint, deadline: number): Promise<number> {
+  // Never-attempted rows first, then least-recently-attempted. Any signed-in wallet can insert
+  // tips with junk tx hashes; an unordered LIMIT would let 50 unverifiable rows starve every
+  // real tip forever. Needs migration 0004's last_verify_attempt_at column.
   const { data: pending, error } = await db
     .from('tips')
     .select('id, sender_wallet, receiver_wallet, tx_hash')
     .eq('verified', false)
     .not('tx_hash', 'is', null)
+    .order('last_verify_attempt_at', { ascending: true, nullsFirst: true })
     .limit(50);
 
-  if (error || !pending?.length) return 0;
+  if (error) {
+    console.error('[indexer] cannot read pending tips:', error.message);
+    return 0;
+  }
+  if (!pending?.length) return 0;
 
   let verified = 0;
+  const attempted: (string | number)[] = [];
 
   for (const tip of pending) {
+    if (Date.now() > deadline) break;
+    attempted.push(tip.id);
+
     try {
       const receipt = await chainClient.getTransactionReceipt({ hash: tip.tx_hash as `0x${string}` });
       if (receipt.status !== 'success') continue;
@@ -356,7 +448,7 @@ async function verifyPendingTips(db: SupabaseClient, safeHead: bigint): Promise<
       // A claimed tip whose transaction paid someone else is not a tip.
       if (!toMatches || !fromMatches || tx.value === 0n) continue;
 
-      await db
+      const { error: upErr } = await db
         .from('tips')
         .update({
           verified: true,
@@ -366,10 +458,19 @@ async function verifyPendingTips(db: SupabaseClient, safeHead: bigint): Promise<
         })
         .eq('id', tip.id);
 
-      verified++;
+      if (!upErr) verified++;
     } catch {
       // Unknown hash, dropped transaction, or RPC blip. Leave it unverified and retry later.
     }
+  }
+
+  // Stamp every row we tried so it goes to the back of the queue behind untried ones.
+  if (attempted.length) {
+    const { error: stampErr } = await db
+      .from('tips')
+      .update({ last_verify_attempt_at: new Date().toISOString() })
+      .in('id', attempted);
+    if (stampErr) console.error('[indexer] cannot stamp tip attempts:', stampErr.message);
   }
 
   return verified;

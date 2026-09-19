@@ -14,6 +14,12 @@ remappings = [
     "forge-std/=contracts/lib/forge-std/src/",
 ]
 
+# `src` covers the whole contracts/ tree (including contracts/lib), so the
+# OpenZeppelin submodule's Certora formal-verification harnesses get swept
+# into compilation and fail on their internal relative imports. They aren't
+# used by this project, so exclude them.
+skip = ["contracts/lib/openzeppelin-contracts/certora/**/*.sol"]
+
 [fmt]
 line_length = 110
 tab_width = 4

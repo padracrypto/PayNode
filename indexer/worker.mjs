@@ -1,4 +1,11 @@
 #!/usr/bin/env node
+import { config as loadEnv } from 'dotenv';
+
+// Next.js reads .env.local automatically; this standalone worker does not, so load it the
+// same way scripts/check-arc-decimals.ts does.
+loadEnv({ path: '.env.local' });
+loadEnv({ path: '.env' });
+
 /**
  * Standalone PayNode indexer daemon.
  *
@@ -43,7 +50,10 @@ async function main() {
       const r = await runIndexerOnce();
       consecutiveFailures = 0;
 
-      if (r.logsSeen > 0 || r.tipsVerified > 0 || !r.caughtUp) {
+      if (r.lockedOut) {
+        // Another run (a cron invocation, or a second daemon) holds the lease. Not an error.
+        console.log('[indexer] another run holds the lease — skipping this pass.');
+      } else if (r.logsSeen > 0 || r.tipsVerified > 0 || !r.caughtUp) {
         console.log(
           `[indexer] ${r.fromBlock}→${r.toBlock} | logs ${r.logsSeen} | applied ${r.eventsApplied} | ` +
             `skipped ${r.eventsSkipped} | deferred ${r.deferredRecorded} | tips ${r.tipsVerified}` +
