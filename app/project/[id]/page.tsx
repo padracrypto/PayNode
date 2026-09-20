@@ -96,6 +96,7 @@ export default function ProjectPage() {
   const [notFound, setNotFound] = useState(false);
   const [clientUsername, setClientUsername] = useState<string>('');
   const [builderUsername, setBuilderUsername] = useState<string>('');
+  const [arbitratorUsername, setArbitratorUsername] = useState<string>('');
 
   const [deliveryData, setDeliveryData] = useState({ notes: '', links: '' });
   const [isRevisionMode, setIsRevisionMode] = useState(false);
@@ -224,13 +225,67 @@ export default function ProjectPage() {
   const offer = pendingOffer as readonly [`0x${string}`, number] | undefined;
   const hasOffer = !!offer && offer[0] !== zeroAddress;
 
+  /**
+   * Whether there is delivered work to show.
+   *
+   * This used to be `status === Delivered || status === Completed`, which blanked the notes
+   * and the link the instant a dispute was opened — `status` moves to Disputed — and again if
+   * the ruling went Refunded. That hid the only evidence of the work at exactly the moment the
+   * arbitrator was asked to judge it, and left both parties arguing from memory.
+   *
+   * `preDispute` is the status the contract itself captured at raiseDispute, so it is a
+   * reliable answer to "had this been delivered before it went sideways?". It defaults to
+   * AwaitingFunds, so a project refunded without any delivery still correctly shows nothing.
+   */
+  const deliveryOnRecord =
+    onchain?.status === ProjectStatus.Delivered ||
+    onchain?.status === ProjectStatus.Completed ||
+    ((onchain?.status === ProjectStatus.Disputed || onchain?.status === ProjectStatus.Refunded) &&
+      onchain.preDispute === ProjectStatus.Delivered);
+
+  const deliveredCard =
+    onchain?.status === ProjectStatus.Completed
+      ? { border: 'border-emerald-900/30', text: 'text-emerald-400', title: 'Delivered Work (Approved)' }
+      : onchain?.status === ProjectStatus.Disputed
+        ? { border: 'border-amber-900/30', text: 'text-amber-400', title: 'Delivered Work (Under Dispute)' }
+        : onchain?.status === ProjectStatus.Refunded
+          ? { border: 'border-red-900/30', text: 'text-red-400', title: 'Delivered Work (Refunded to Client)' }
+          : { border: 'border-purple-900/30', text: 'text-purple-400', title: 'Work Delivered for Review' };
+
   const isClient = act?.isClient ?? false;
   const isBuilder = act?.isBuilder ?? false;
   // Decided from the CHAIN, which is what resolveDispute actually enforces — not the
   // client-supplied `arbitrator` column in Supabase.
   const isArbitrator =
     hasArbitrator && !!address && (arbitratorAddr as string).toLowerCase() === address.toLowerCase();
-  const isUnauthorized = !isClient && !isBuilder && !isArbitrator && !!address && !!onchain;
+  // `arbitratorAddr !== undefined` is load-bearing: the `projectArbitrator` read resolves a
+  // moment after `projects` does, and without it the real arbitrator was shown Access Denied
+  // for that gap — on the one page they were sent here to act on.
+  const isUnauthorized =
+    !isClient && !isBuilder && !isArbitrator && !!address && !!onchain && arbitratorAddr !== undefined;
+
+  // The arbitrator's handle is resolved separately from the client's and the builder's,
+  // because their address comes from the CHAIN rather than from the row. Looking it up from
+  // Supabase's client-written `arbitrator` column would let a client display the handle of a
+  // wallet that resolveDispute does not actually recognise.
+  useEffect(() => {
+    if (!hasArbitrator) {
+      setArbitratorUsername('');
+      return;
+    }
+    let cancelled = false;
+    void supabase
+      .from('profiles')
+      .select('username')
+      .eq('wallet_address', (arbitratorAddr as string).toLowerCase())
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!cancelled) setArbitratorUsername(data?.username ?? '');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [hasArbitrator, arbitratorAddr]);
 
   useEffect(() => {
     if (!project?.deadline) return;
@@ -607,15 +662,25 @@ export default function ProjectPage() {
     return send('raiseDispute', [pid!], 'Disputed', 'Opening dispute…');
   };
 
-  // Path 1. Only the designated arbitrator can call this on-chain; the button is gated on the
+  // Path 1. Only the designated arbitrator can call this on-chain; the buttons are gated on the
   // same check. The ruling pays out immediately and cannot be revised.
-  const resolveAsArbitrator = () => {
+  //
+  // `builderBps` is passed in rather than read from `rulingBps`, because the two outcomes an
+  // arbitrator reaches for most — pay the builder, refund the client — are the endpoints of
+  // that slider, and making someone drag a range input to exactly 0 or 10000 to express them
+  // is an invitation to rule 99% by accident. The slider stays for genuine splits.
+  const resolveAsArbitrator = (builderBps: number) => {
+    const summary =
+      builderBps === 10000
+        ? '100% to the builder. The client is refunded nothing.'
+        : builderBps === 0
+          ? '100% refunded to the client. The builder is paid nothing.'
+          : `${builderBps / 100}% to the builder and ${(10000 - builderBps) / 100}% refunded to the client.`;
     const ok = window.confirm(
-      `Submit your ruling?\n\n${rulingBps / 100}% to the builder and ${(10000 - rulingBps) / 100}% refunded to the client. ` +
-        'This pays out immediately and is final.',
+      `Submit your ruling?\n\n${summary}\n\nThis pays out immediately and is final.`,
     );
     if (!ok) return;
-    return send('resolveDispute', [pid!, rulingBps], 'Ruled', 'Submitting ruling…');
+    return send('resolveDispute', [pid!, builderBps], 'Ruled', 'Submitting ruling…');
   };
 
   const proposeSettlement = () =>
@@ -718,9 +783,20 @@ export default function ProjectPage() {
           </span>
         </div>
 
-        <h1 className="text-3xl font-black text-white mb-8 w-3/4 leading-tight">{project.title}</h1>
-        
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
+        {/* The brief itself. It was never rendered on this page at all — the client typed it at
+            /project/new and nobody, including the arbitrator ruling on the work, could read it
+            back. RLS has always permitted it (migration 0001 grants SELECT on the whole row,
+            0005 extends that to the arbitrator); only the markup was missing. */}
+        <div className="mb-8 w-3/4">
+          <h1 className="text-3xl font-black text-white leading-tight">{project.title}</h1>
+          {project.description && (
+            <p className="mt-3 text-sm text-slate-400 leading-relaxed whitespace-pre-wrap">
+              {project.description}
+            </p>
+          )}
+        </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-10">
           <div className="bg-[#050B14] border border-slate-800/80 rounded-2xl p-5">
             <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Builder</p>
             {builderUsername ? (
@@ -741,6 +817,48 @@ export default function ProjectPage() {
               <p className="text-white font-mono text-sm truncate">{project.client.substring(0,6)}...{project.client.substring(project.client.length-4)}</p>
             )}
           </div>
+
+          {/* Who rules if this goes wrong. The builder's acceptance of an arbitrator is implicit
+              in starting work — the contract's own note on createProject tells them to verify it
+              first — so it has to be legible here rather than only once a dispute is already
+              open. Read from the chain, never from the client-written `arbitrator` column. */}
+          <div className="bg-[#050B14] border border-slate-800/80 rounded-2xl p-5">
+            <div className="flex items-center gap-1.5 mb-2 group relative w-max">
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Arbitrator</p>
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4 cursor-help text-slate-500 transition-colors">
+                <path strokeLinecap="round" strokeLinejoin="round" d="m11.25 11.25.041-.02a.75.75 0 0 1 1.063.852l-.708 2.836a.75.75 0 0 0 1.063.853l.041-.021M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9-3.75h.008v.008H12V8.25Z" />
+              </svg>
+              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-64 p-3 bg-slate-800 border border-slate-700 text-xs text-white rounded-xl shadow-xl z-20 font-normal normal-case text-center pointer-events-none">
+                If this project is disputed, this is who decides how the escrow is split. Verify it before you start work.
+              </div>
+            </div>
+
+            {arbitratorAddr === undefined ? (
+              <p className="text-slate-600 font-mono text-sm">…</p>
+            ) : hasArbitrator ? (
+              <>
+                {arbitratorUsername ? (
+                  <Link href={`/${arbitratorUsername}`} className="text-blue-400 hover:text-blue-300 font-bold text-sm truncate block transition-colors">
+                    @{arbitratorUsername}
+                  </Link>
+                ) : (
+                  <p className="text-white font-mono text-sm truncate" title={arbitratorAddr as string}>
+                    {short(arbitratorAddr as string)}
+                  </p>
+                )}
+                {isArbitrator && (
+                  <span className="mt-1.5 inline-block text-[10px] font-black uppercase tracking-wider text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-md">
+                    You
+                  </span>
+                )}
+              </>
+            ) : (
+              <p className="text-slate-400 font-bold text-sm truncate">
+                {hasResolver ? 'Automatic' : 'None'}
+              </p>
+            )}
+          </div>
+
           <div className="bg-[#050B14] border border-slate-800/80 rounded-2xl p-5">
             <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Budget</p>
             <p className="text-blue-400 font-mono font-bold text-lg">{onchain ? formatUSDC(onchain.amount) : project.budget + ' USDC'}</p>
@@ -831,18 +949,39 @@ export default function ProjectPage() {
               {/* ---- PATH 1: the designated arbitrator's ruling ---- */}
               {isArbitrator && (
                 <div className="bg-[#050B14] border border-amber-900/50 rounded-2xl p-5">
-                  <p className="text-white font-bold text-sm mb-3">Your ruling</p>
-                  <input type="range" min={0} max={10000} step={100} value={rulingBps}
-                         onChange={(e) => setRulingBps(Number(e.target.value))}
-                         className="w-full accent-amber-500 mb-2" />
-                  <div className="flex justify-between text-xs text-slate-400 mb-4">
-                    <span>Client refunded {(10000 - rulingBps) / 100}%</span>
-                    <span>Builder paid {rulingBps / 100}%</span>
+                  <p className="text-white font-bold text-sm mb-1">Your ruling</p>
+                  <p className="text-xs text-slate-500 leading-relaxed mb-5">
+                    Read the brief above and any delivered work below before you rule. Whichever you
+                    choose pays out immediately and cannot be revised.
+                  </p>
+
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    <button onClick={() => resolveAsArbitrator(10000)} disabled={loading}
+                            className="flex-1 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white py-3 rounded-xl font-bold text-sm transition-all shadow-[0_0_15px_rgba(16,185,129,0.3)]">
+                      {loading ? txStatus : 'Release to Builder'}
+                    </button>
+                    <button onClick={() => resolveAsArbitrator(0)} disabled={loading}
+                            className="flex-1 bg-red-600 hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed text-white py-3 rounded-xl font-bold text-sm transition-all shadow-[0_0_15px_rgba(220,38,38,0.3)]">
+                      {loading ? txStatus : 'Refund to Client'}
+                    </button>
                   </div>
-                  <button onClick={resolveAsArbitrator} disabled={loading}
-                          className="w-full bg-amber-600 hover:bg-amber-500 text-white py-3 rounded-xl font-bold text-sm">
-                    {loading ? txStatus : 'Submit ruling'}
-                  </button>
+
+                  <div className="border-t border-amber-900/30 mt-5 pt-5">
+                    <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">
+                      Or split the escrow
+                    </p>
+                    <input type="range" min={0} max={10000} step={100} value={rulingBps}
+                           onChange={(e) => setRulingBps(Number(e.target.value))}
+                           className="w-full accent-amber-500 mb-2" />
+                    <div className="flex justify-between text-xs text-slate-400 mb-4">
+                      <span>Client refunded {(10000 - rulingBps) / 100}%</span>
+                      <span>Builder paid {rulingBps / 100}%</span>
+                    </div>
+                    <button onClick={() => resolveAsArbitrator(rulingBps)} disabled={loading}
+                            className="w-full bg-amber-600 hover:bg-amber-500 disabled:opacity-50 disabled:cursor-not-allowed text-white py-3 rounded-xl font-bold text-sm transition-all">
+                      {loading ? txStatus : `Submit ${rulingBps / 100}/${(10000 - rulingBps) / 100} split`}
+                    </button>
+                  </div>
                 </div>
               )}
 
@@ -1036,13 +1175,13 @@ export default function ProjectPage() {
             </div>
           )}
 
-          {(onchain?.status === ProjectStatus.Delivered || onchain?.status === ProjectStatus.Completed) && (
-            <div className={`bg-[#050B14] border ${project.status === 'Completed' ? 'border-emerald-900/30' : 'border-purple-900/30'} p-6 md:p-8 rounded-3xl`}>
-              <h2 className={`text-xl font-bold ${project.status === 'Completed' ? 'text-emerald-400' : 'text-purple-400'} mb-6 flex items-center gap-2`}>
+          {deliveryOnRecord && (
+            <div className={`bg-[#050B14] border ${deliveredCard.border} p-6 md:p-8 rounded-3xl`}>
+              <h2 className={`text-xl font-bold ${deliveredCard.text} mb-6 flex items-center gap-2`}>
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5"><path fillRule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm3.857-9.809a.75.75 0 0 0-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 1 0-1.06 1.061l2.5 2.5a.75.75 0 0 0 1.137-.089l4-5.5Z" clipRule="evenodd" /></svg>
-                {project.status === 'Completed' ? 'Delivered Work (Approved)' : 'Work Delivered for Review'}
+                {deliveredCard.title}
               </h2>
-              
+
               <div className="bg-[#0f172a] p-5 rounded-2xl border border-slate-800/80 mb-6 text-sm text-slate-300">
                 <p className="mb-4"><strong className="text-slate-500 uppercase text-xs tracking-wider block mb-1">Notes:</strong>{project.delivery_notes || <span className="text-slate-500 italic">No notes provided.</span>}</p>
                 <p><strong className="text-slate-500 uppercase text-xs tracking-wider block mb-1">Link:</strong>{safeHref(project.delivery_links)
