@@ -252,6 +252,15 @@ export default function ProjectPage() {
           ? { border: 'border-red-900/30', text: 'text-red-400', title: 'Delivered Work (Refunded to Client)' }
           : { border: 'border-purple-900/30', text: 'text-purple-400', title: 'Work Delivered for Review' };
 
+  // The delivery deadline stops meaning anything once the contract has finalized. Read from the
+  // chain rather than the Supabase `status` column, which only moves when the indexer catches up.
+  const closedCard =
+    onchain?.status === ProjectStatus.Completed
+      ? { label: 'Completed', text: 'text-emerald-400' }
+      : onchain?.status === ProjectStatus.Refunded || onchain?.status === ProjectStatus.Cancelled
+        ? { label: 'Closed', text: 'text-slate-400' }
+        : null;
+
   const isClient = act?.isClient ?? false;
   const isBuilder = act?.isBuilder ?? false;
   // Decided from the CHAIN, which is what resolveDispute actually enforces — not the
@@ -487,12 +496,15 @@ export default function ProjectPage() {
   const sendNotification = async (receiverWallet: string, message: string, type: string) => {
     if (!receiverWallet) return;
     try {
-      await supabase.from('notifications').insert([{
+      // supabase-js reports failures (RLS rejection, missing session) through `error` and does
+      // NOT throw, so without this check a refused insert vanished without a trace.
+      const { error } = await supabase.from('notifications').insert([{
         wallet_address: receiverWallet,
         message: message,
         type: type,
         link: `/project/${id}`
       }]);
+      if (error) throw error;
     } catch (err) {
       console.error("Failed to send notification:", err);
     }
@@ -875,9 +887,13 @@ export default function ProjectPage() {
               </div>
             </div>
 
-            <p className={`font-mono font-bold text-sm ${isPastDeadline ? 'text-red-400' : 'text-emerald-400'}`}>
-              {timeLeft || 'Calculating...'}
-            </p>
+            {closedCard ? (
+              <p className={`font-mono font-bold text-sm ${closedCard.text}`}>{closedCard.label}</p>
+            ) : (
+              <p className={`font-mono font-bold text-sm ${isPastDeadline ? 'text-red-400' : 'text-emerald-400'}`}>
+                {timeLeft || 'Calculating...'}
+              </p>
+            )}
           </div>
         </div>
 
