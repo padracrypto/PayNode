@@ -111,6 +111,14 @@ export function checkEnv(env) {
         'mainnet, the chain id, RPC, explorer, escrow address and deploy block must all be replaced.',
     );
   }
+  const maxRange = Number(get('INDEXER_MAX_RANGE') || 2000);
+  if (/drpc\.org/i.test(rpc) && maxRange > 100) {
+    warnings.push(
+      `NEXT_PUBLIC_ARC_RPC_URL is a dRPC endpoint and INDEXER_MAX_RANGE is ${maxRange}. The free dRPC plan rejects ` +
+        'getLogs windows over ~100 blocks, which makes every indexer run fail. Set INDEXER_MAX_RANGE=100 ' +
+        '(ignore this on a paid plan that allows larger ranges).',
+    );
+  }
   if (!rpcBackup) {
     warnings.push('NEXT_PUBLIC_ARC_RPC_URL_BACKUP is unset: a single RPC outage stalls both the UI reads and the indexer.');
   }

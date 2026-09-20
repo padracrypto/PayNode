@@ -1,0 +1,19 @@
+{
+  "network": "Arc Testnet",
+  "chainId": 5042002,
+  "contract": "PayNodeEscrowV2",
+  "address": "0x61F0530ae40b3EEbD4eB76c5A0977827BE7CB10e",
+  "deployBlock": 62823049,
+  "deployedAt": "2026-09-18T23:46:48Z",
+  "txHash": "0x26fdea775080d132e61120dbaccdec6d1609cf610f2af4157a832560b70f758c",
+  "deployer": "0x898d9CB831B57ed3a07c98e57969fD748662b442",
+  "constructorArgs": {
+    "_owner": "0x898d9CB831B57ed3a07c98e57969fD748662b442",
+    "_resolverSigner": "0x898d9CB831B57ed3a07c98e57969fD748662b442",
+    "_feeRecipient": "0x898d9CB831B57ed3a07c98e57969fD748662b442",
+    "_feeBps": 0
+  },
+  "rpc": "https://rpc.testnet.arc.network",
+  "explorer": "https://explorer.testnet.arc.io",
+  "notes": "Staging deployment. The autonomous resolver is ENABLED here (resolver == owner key); mainnet deliberately disables it."
+}

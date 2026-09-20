@@ -5,10 +5,10 @@ Operator reference for the Vercel + Supabase go-live. Template for the variables
 
 ## 0. Decisions in force
 
-1. **Staging on Arc Testnet first.** `paynode.online` runs against Arc Testnet (chain `5042002`) until the
-   mainnet switch. The chain values in a developer's `.env.local` are the testnet ones and can be reused for
-   staging — except `INDEXER_SECRET`, which must be a fresh production value. See
-   [§6](#6-switching-to-arc-mainnet) before switching.
+1. **Escrow deployed on both networks.** Arc Testnet (chain `5042002`) is staging; Arc Mainnet (chain `5042`)
+   was deployed on 2026-09-20. Addresses, deploy blocks, transactions and constructor arguments are recorded in
+   [`deployments/`](deployments/) — that folder is the source of truth, the env vars are copies of it. See
+   [§6](#6-switching-to-arc-mainnet) before pointing the site at mainnet.
 2. **Next.js is pinned at 14.2.35.** A jump to 15.x was deferred to avoid wagmi/RainbowKit breakage right before
    launch. `npm audit --omit=dev` still lists advisories against every 14.x release (fixed only in 15.5.24+ / 16.x).
    Revisit before mainnet.
@@ -51,7 +51,7 @@ Changing one requires a redeploy. Secrets must never carry that prefix (the buil
 | `INDEXER_SECRET` | **yes** | yes | **≥ 32 characters**: `openssl rand -hex 32`. Shorter values are rejected (HTTP 401) |
 | `CRON_SECRET` | **yes** | Pro cron only | **Identical to `INDEXER_SECRET`.** Vercel Cron sends it as `Authorization: Bearer <value>` |
 | `INDEXER_CONFIRMATIONS` | no | no | Default `5`. Blocks the indexer stays behind head |
-| `INDEXER_MAX_RANGE` | no | no | Default `2000`. Max blocks per `getLogs` call |
+| `INDEXER_MAX_RANGE` | no | **yes on free dRPC** | Default `2000`. Max blocks per `getLogs` call. The free `arc.drpc.org` plan rejects windows over ~100 blocks (measured), so set `100` there |
 | `INDEXER_MAX_BLOCKS_PER_RUN` | no | no | Default `20000`. Caps one run so a backfill stays inside the function timeout |
 | `INDEXER_POLL_MS` | no | no | Default `15000`. Standalone daemon (`npm run indexer`) only |
 
@@ -154,3 +154,37 @@ Replacing the RPC and contract values is necessary but **not sufficient**. Testn
 5. Address the §5 items that matter for real funds: separate the resolver key from the owner (owner behind a
    multisig), decide `feeBps`, and resolve the Next.js advisories from §0.
 6. Add the mainnet domain to the WalletConnect project's allow-list and re-verify §4.
+
+## 7. Deploying the escrow contract
+
+`script/DeployPayNodeEscrowV2.s.sol` reads its constructor arguments from the environment. Signing is done by
+Foundry from an encrypted keystore — never put a private key in an env var or a file.
+
+| Variable | Constructor arg | Notes |
+|---|---|---|
+| `ESCROW_OWNER` | `_owner` | Pause, fee and resolver-rotation authority. **No** power over disputes or escrowed funds. Hand it to a multisig later with `transferOwnership` + `acceptOwnership` (two-step) |
+| `ESCROW_RESOLVER_SIGNER` | `_resolverSigner` | Signs autonomous-resolver rulings. `0x000…0` disables that path (disputes then go to the arbitrator, mutual settlement, or the 30-day breaker). Changing it later costs a 7-day timelock and only affects projects funded afterwards |
+| `ESCROW_FEE_RECIPIENT` | `_feeRecipient` | Must be non-zero even with a 0% fee; the owner can change it later |
+| `ESCROW_FEE_BPS` | `_feeBps` | 0–500 |
+
+```bash
+cast wallet import mainnet-deployer --interactive        # once; prompts for the key
+export ESCROW_OWNER=0x… ESCROW_RESOLVER_SIGNER=0x… ESCROW_FEE_RECIPIENT=0x… ESCROW_FEE_BPS=0
+# simulate first — sends nothing, needs no key
+forge script script/DeployPayNodeEscrowV2.s.sol --rpc-url $RPC --sender $DEPLOYER
+# deploy
+forge script script/DeployPayNodeEscrowV2.s.sol --rpc-url $RPC --sender $DEPLOYER --account mainnet-deployer --broadcast
+```
+
+The address is CREATE(deployer, nonce), so it changes if the deployer sends any other transaction first. Take the
+address and block from the receipt, not from the simulation:
+
+```bash
+node -e "const r=require('./broadcast/DeployPayNodeEscrowV2.s.sol/<chainId>/run-latest.json').receipts[0];console.log(r.contractAddress, parseInt(r.blockNumber,16))"
+cast code <addr> --rpc-url $RPC | head -c 12     # must start 0x6080…, never just 0x
+cast call <addr> "owner()(address)" --rpc-url $RPC
+```
+
+Set `NEXT_PUBLIC_ESCROW_ADDRESS` and `NEXT_PUBLIC_ESCROW_DEPLOY_BLOCK` from that output and redeploy the site, and
+record the deployment in `deployments/<network>.json` (`broadcast/` is git-ignored).
+Never point the app at an address that has no code: a payable call to it succeeds and simply moves the funds.

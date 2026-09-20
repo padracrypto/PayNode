@@ -1,0 +1,34 @@
+{
+  "network": "Arc Mainnet",
+  "chainId": 5042,
+  "contract": "PayNodeEscrowV2",
+  "address": "0xDC3B4bE2AfD7b7A6f03E4F41379d6378451C1910",
+  "deployBlock": 21755915,
+  "deployedAt": "2026-09-20T00:48:24Z",
+  "txHash": "0xff92e9cf176d71dd175abecc14070c36bd87499d404cf848ffedb9b0913bcf50",
+  "deployer": "0x898d9CB831B57ed3a07c98e57969fD748662b442",
+  "constructorArgs": {
+    "_owner": "0x898d9CB831B57ed3a07c98e57969fD748662b442",
+    "_resolverSigner": "0x0000000000000000000000000000000000000000",
+    "_feeRecipient": "0x898d9CB831B57ed3a07c98e57969fD748662b442",
+    "_feeBps": 0
+  },
+  "build": {
+    "solc": "0.8.26",
+    "optimizer": true,
+    "optimizerRuns": 200,
+    "viaIR": false,
+    "openzeppelinContracts": "v5.1.0",
+    "sourceFile": "contracts/PayNodeEscrowV2.sol",
+    "sourceGitBlob": "1a7678f3bffe4daad6c9a8fa0575f0bce650d148"
+  },
+  "verifiedOnChain": {
+    "checkedAt": "2026-09-20",
+    "notes": "receipt, block, deployer, constructor args, owner(), resolverSigner(), feeBps() read back over RPC; runtime bytecode length equals the local build, 133 bytes differ (immutable slots). Not yet verified on the block explorer."
+  },
+  "todo": [
+    "Verify the source on the block explorer (DEPLOYMENT.md section 7).",
+    "Move ownership to a multisig: transferOwnership then acceptOwnership.",
+    "Set NEXT_PUBLIC_ARC_EXPLORER_URL once the mainnet explorer URL is confirmed."
+  ]
+}

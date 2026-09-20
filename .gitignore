@@ -46,3 +46,4 @@ next-env.d.ts
 # foundry build output (regenerate with forge build / npm run abi)
 /cache/
 /contracts/out/
+/broadcast/
