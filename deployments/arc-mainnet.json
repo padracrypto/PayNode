@@ -7,6 +7,7 @@
   "deployedAt": "2026-09-20T00:48:24Z",
   "txHash": "0xff92e9cf176d71dd175abecc14070c36bd87499d404cf848ffedb9b0913bcf50",
   "deployer": "0x898d9CB831B57ed3a07c98e57969fD748662b442",
+  "explorer": "https://arc.etherscan.io",
   "constructorArgs": {
     "_owner": "0x898d9CB831B57ed3a07c98e57969fD748662b442",
     "_resolverSigner": "0x0000000000000000000000000000000000000000",
@@ -29,6 +30,6 @@
   "todo": [
     "Verify the source on the block explorer (DEPLOYMENT.md section 7).",
     "Move ownership to a multisig: transferOwnership then acceptOwnership.",
-    "Set NEXT_PUBLIC_ARC_EXPLORER_URL once the mainnet explorer URL is confirmed."
+    "Open a transaction link on the explorer once to confirm it renders: arc.etherscan.io returned HTTP 403 to command-line requests (bot protection), so it was not machine-verified."
   ]
 }
