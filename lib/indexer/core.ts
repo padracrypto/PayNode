@@ -3,6 +3,7 @@ import { createClient, type RealtimeClientOptions, type SupabaseClient } from '@
 import WebSocket from 'ws';
 import { createPublicClient, decodeEventLog, http, fallback, type Log } from 'viem';
 import { arc, ARC_RPC_URLS, ESCROW_ADDRESS, PAYNODE_ESCROW_ABI } from '../paynode';
+import { notifyDisputeEvent, type DisputeEventName } from './notify';
 
 /**
  * PayNode event indexer.
@@ -193,6 +194,10 @@ export type IndexerResult = {
   eventsApplied: number;
   eventsSkipped: number;
   deferredRecorded: number;
+  /** Notifications newly written for dispute events. A replayed event contributes 0. */
+  notificationsCreated: number;
+  /** Dispute events whose notifications could not be written. Logged, never fatal. */
+  notificationsFailed: number;
   tipsVerified: number;
   caughtUp: boolean;
   /** True when another run held the lease, so this invocation did nothing. Not an error. */
@@ -212,6 +217,8 @@ const emptyResult = (over: Partial<IndexerResult> = {}): IndexerResult => ({
   eventsApplied: 0,
   eventsSkipped: 0,
   deferredRecorded: 0,
+  notificationsCreated: 0,
+  notificationsFailed: 0,
   tipsVerified: 0,
   caughtUp: true,
   lockedOut: false,
@@ -279,6 +286,8 @@ async function runLocked(db: SupabaseClient, owner: string, deadline: number): P
   let applied = 0;
   let skipped = 0;
   let deferred = 0;
+  let notified = 0;
+  let notifyFailed = 0;
   let highestDone = cursor;
 
   for (let start = fromBlock; start <= ceiling; start += MAX_RANGE) {
@@ -350,6 +359,29 @@ async function runLocked(db: SupabaseClient, owner: string, deadline: number): P
 
       if (ok) applied++;
       else skipped++;
+
+      // Runs whether or not the status write was applied: the (tx, log, wallet) key makes a
+      // replay a no-op, and it lets a replay repair a notification that failed the first time.
+      //
+      // Best-effort on purpose. Unlike the writes above, a failure here must NOT abort the
+      // pass: the cursor would never advance, and one bad notification would freeze project
+      // status sync for every user. It is logged and counted in the result instead.
+      if (eventName === 'DisputeRaised' || eventName === 'DisputeResolved') {
+        try {
+          notified += await notifyDisputeEvent(
+            db,
+            eventName as DisputeEventName,
+            args,
+            `${log.transactionHash}:${log.logIndex}`,
+          );
+        } catch (err) {
+          notifyFailed++;
+          console.error(
+            `[indexer] notification failed for ${eventName} at ${log.blockNumber}/${log.logIndex}:`,
+            err instanceof Error ? err.message : err,
+          );
+        }
+      }
     }
 
     highestDone = end;
@@ -379,6 +411,8 @@ async function runLocked(db: SupabaseClient, owner: string, deadline: number): P
     eventsApplied: applied,
     eventsSkipped: skipped,
     deferredRecorded: deferred,
+    notificationsCreated: notified,
+    notificationsFailed: notifyFailed,
     tipsVerified,
     caughtUp: highestDone >= safeHead,
     lockedOut: false,

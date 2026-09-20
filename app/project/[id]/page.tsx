@@ -558,14 +558,9 @@ export default function ProjectPage() {
             `The client reclaimed funds for "${project.title}" after the deadline.`, 'PROJECT_CANCELLED');
           break;
         case 'Disputed':
-          await sendNotification(isClient ? project.builder : project.client,
-            `A dispute was opened on "${project.title}".`, 'PROJECT_CANCELLED');
-          // The arbitrator is not a party to the project and would otherwise never learn
-          // that a ruling is being waited on.
-          if (hasArbitrator) {
-            await sendNotification((arbitratorAddr as string).toLowerCase(),
-              `Your ruling is needed on the dispute for "${project.title}".`, 'PROJECT_CANCELLED');
-          }
+          // Notified by the indexer from the DisputeRaised event (client, builder AND the
+          // arbitrator, who a browser session cannot notify). Sending one here as well would
+          // show every recipient the same dispute twice.
           break;
         case 'OfferSent':
           await sendNotification(isClient ? project.builder : project.client,

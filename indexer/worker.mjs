@@ -56,7 +56,9 @@ async function main() {
       } else if (r.logsSeen > 0 || r.tipsVerified > 0 || !r.caughtUp) {
         console.log(
           `[indexer] ${r.fromBlock}→${r.toBlock} | logs ${r.logsSeen} | applied ${r.eventsApplied} | ` +
-            `skipped ${r.eventsSkipped} | deferred ${r.deferredRecorded} | tips ${r.tipsVerified}` +
+            `skipped ${r.eventsSkipped} | deferred ${r.deferredRecorded} | ` +
+            `notified ${r.notificationsCreated}${r.notificationsFailed ? ` (FAILED ${r.notificationsFailed})` : ''} | ` +
+            `tips ${r.tipsVerified}` +
             (r.caughtUp ? '' : ' | MORE PENDING'),
         );
       }
