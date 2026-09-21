@@ -15,6 +15,15 @@ if (process.env.VERCEL_ENV === 'production' || process.env.PAYNODE_STRICT_ENV ==
 }
 
 /** @type {import('next').NextConfig} */
-const nextConfig = {};
+const nextConfig = {
+  async redirects() {
+    return [
+      // Clients that request /favicon.ico directly (rather than reading the
+      // <link rel="icon"> tag) would otherwise fall through to app/[username]
+      // and get an HTML profile page. Send them to the real icon instead.
+      { source: '/favicon.ico', destination: '/icon.svg', permanent: false },
+    ];
+  },
+};
 
 export default nextConfig;
