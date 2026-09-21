@@ -3,8 +3,12 @@ import Link from 'next/link';
 import { Providers } from './Providers';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import NotificationBell from './components/NotificationBell';
+import type { Metadata } from 'next';
 
-export const metadata = {
+// The favicon comes from the `app/icon.svg` file convention, which Next.js
+// resolves into the icon <link> tags automatically — naming the same file
+// again under `icons` here would emit a second, redundant tag.
+export const metadata: Metadata = {
   title: 'PayNode - Trustless Web3 Escrow on ARC',
   description: 'The ultimate Web3 platform for content creators and builders on the ARC network.',
 };
