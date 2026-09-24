@@ -24,6 +24,15 @@ type SiweState = {
   needsSignIn: boolean;
   signIn: () => Promise<boolean>;
   signOut: () => Promise<void>;
+  /**
+   * Re-read the session from the server and return the wallet it belongs to, or null.
+   *
+   * `authedWallet` is read once at mount and is not re-validated, so a token that expires
+   * while a page sits open leaves it holding a wallet the server no longer recognises. Any
+   * write that gates on the cached value would sail past its own check and fail at PostgREST
+   * instead. Call this immediately before a write to gate on what the server actually says.
+   */
+  refresh: () => Promise<string | null>;
 };
 
 const SiweContext = React.createContext<SiweState | null>(null);
@@ -51,14 +60,17 @@ export function SiweProvider({ children }: { children: React.ReactNode }) {
       if (!res.ok) {
         setAuthedWallet(null);
         setStatus('unauthenticated');
-        return;
+        return null;
       }
       const data = (await res.json()) as { wallet?: string };
-      setAuthedWallet(data.wallet ?? null);
-      setStatus(data.wallet ? 'authenticated' : 'unauthenticated');
+      const wallet = data.wallet ?? null;
+      setAuthedWallet(wallet);
+      setStatus(wallet ? 'authenticated' : 'unauthenticated');
+      return wallet;
     } catch {
       setAuthedWallet(null);
       setStatus('unauthenticated');
+      return null;
     }
   }, []);
 
@@ -161,6 +173,7 @@ export function SiweProvider({ children }: { children: React.ReactNode }) {
     needsSignIn: isConnected && status === 'unauthenticated',
     signIn,
     signOut,
+    refresh,
   };
 
   return <SiweContext.Provider value={value}>{children}</SiweContext.Provider>;
@@ -169,11 +182,61 @@ export function SiweProvider({ children }: { children: React.ReactNode }) {
 /**
  * Drop-in gate for any action that writes to Supabase.
  * Renders a sign-in prompt when the wallet is connected but unverified.
+ *
+ * `autoPrompt` asks the wallet for the signature as soon as the gate appears, instead of
+ * waiting for a click on the button below. Use it on pages a user only reaches in order to
+ * write something — /onboarding, /create-profile, /settings — where the extra click is pure
+ * friction and its absence was mistaken for the app being broken. Leave it off on pages that
+ * are useful without a session: popping a signature request at someone who opened a public
+ * profile or a tip link, before they have done anything, reads as a phishing attempt.
+ *
+ * It fires ONCE per connected wallet. Rejecting the prompt must not re-open it — signIn()
+ * returns the status to 'unauthenticated', which is the same state that triggered it, so an
+ * ungated effect here is an infinite signature loop. The button stays as the way back in.
  */
-export function RequireSiwe({ children }: { children: React.ReactNode }) {
+export function RequireSiwe({
+  children,
+  autoPrompt = false,
+}: {
+  children: React.ReactNode;
+  autoPrompt?: boolean;
+}) {
   const { needsSignIn, signIn, status, error } = useSiwe();
+  const { address } = useAccount();
 
-  if (!needsSignIn) return <>{children}</>;
+  /** Wallet we have already opened the prompt for, so a refusal is respected. */
+  const promptedFor = React.useRef<string | null>(null);
+  /** True only while the sign-in THIS gate started is still open in the wallet. */
+  const [promptingHere, setPromptingHere] = React.useState(false);
+
+  /** Used by both the automatic prompt and the button, so either keeps the gate up. */
+  const startSignIn = React.useCallback(() => {
+    setPromptingHere(true);
+    void signIn().finally(() => setPromptingHere(false));
+  }, [signIn]);
+
+  React.useEffect(() => {
+    if (!address) {
+      // Disconnected: forget the refusal, so reconnecting later asks again.
+      promptedFor.current = null;
+      return;
+    }
+    if (!autoPrompt || !needsSignIn) return;
+
+    const wallet = address.toLowerCase();
+    if (promptedFor.current === wallet) return;
+    // Marked BEFORE awaiting: signIn() flips status back to 'unauthenticated' on a
+    // rejection, which would otherwise re-enter this effect and prompt again forever.
+    promptedFor.current = wallet;
+    startSignIn();
+  }, [autoPrompt, needsSignIn, address, startSignIn]);
+
+  // Hold the gate while OUR prompt is open, so the form is not left interactive behind the
+  // signature dialog. Deliberately not `status === 'authenticating'`: the forms inside call
+  // signIn() themselves before submitting, and gating on the global status would unmount the
+  // child mid-await — losing everything typed into it, and in the tip page's case abandoning
+  // a transaction that was about to be sent.
+  if (!needsSignIn && !promptingHere) return <>{children}</>;
 
   return (
     <div className="bg-[#0f172a]/80 border border-slate-800 rounded-2xl p-6 text-center">
@@ -183,7 +246,7 @@ export function RequireSiwe({ children }: { children: React.ReactNode }) {
       </p>
       {error && <p className="text-red-400 text-sm mb-4">{error}</p>}
       <button
-        onClick={() => void signIn()}
+        onClick={startSignIn}
         disabled={status === 'authenticating'}
         className="bg-blue-600 hover:bg-blue-500 disabled:bg-slate-800 disabled:text-slate-500 text-white px-6 py-3 rounded-xl font-bold transition-all"
       >

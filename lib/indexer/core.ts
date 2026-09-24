@@ -3,7 +3,7 @@ import { createClient, type RealtimeClientOptions, type SupabaseClient } from '@
 import WebSocket from 'ws';
 import { createPublicClient, decodeEventLog, http, fallback, type Log } from 'viem';
 import { arc, ARC_RPC_URLS, ESCROW_ADDRESS, PAYNODE_ESCROW_ABI } from '../paynode';
-import { notifyDisputeEvent, type DisputeEventName } from './notify';
+import { notifyDisputeEvent, notifyVerifiedTip, type DisputeEventName } from './notify';
 
 /**
  * PayNode event indexer.
@@ -482,7 +482,10 @@ async function verifyPendingTips(db: SupabaseClient, safeHead: bigint, deadline:
       // A claimed tip whose transaction paid someone else is not a tip.
       if (!toMatches || !fromMatches || tx.value === 0n) continue;
 
-      const { error: upErr } = await db
+      // Only promote a row that is still unverified. Two overlapping runs would otherwise
+      // both "succeed" here and both go on to notify — harmless for the row, but the
+      // notification count would double-report work only one of them really did.
+      const { data: promoted, error: upErr } = await db
         .from('tips')
         .update({
           verified: true,
@@ -490,9 +493,32 @@ async function verifyPendingTips(db: SupabaseClient, safeHead: bigint, deadline:
           amount_wei: tx.value.toString(),
           block_number: Number(receipt.blockNumber),
         })
-        .eq('id', tip.id);
+        .eq('id', tip.id)
+        .eq('verified', false)
+        .select('id');
 
-      if (!upErr) verified++;
+      if (upErr || !promoted?.length) continue;
+      verified++;
+
+      // Tell the recipient. The tip page cannot: RLS only lets a browser notify someone it
+      // shares a project with, so its insert was rejected for every tip ever sent. Only now
+      // is the transfer known to be real, which is the right moment to say so anyway.
+      //
+      // Best-effort, exactly like the dispute path: the row is already correct, and a failed
+      // notification must not stop the remaining tips in this batch from being verified.
+      try {
+        await notifyVerifiedTip(db, {
+          sender_wallet: String(tip.sender_wallet),
+          receiver_wallet: String(tip.receiver_wallet),
+          tx_hash: String(tip.tx_hash),
+          amount_wei: tx.value,
+        });
+      } catch (err) {
+        console.error(
+          `[indexer] tip verified but notification failed for ${tip.tx_hash}:`,
+          err instanceof Error ? err.message : err,
+        );
+      }
     } catch {
       // Unknown hash, dropped transaction, or RPC blip. Leave it unverified and retry later.
     }

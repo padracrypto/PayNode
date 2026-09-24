@@ -4,10 +4,32 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAccount } from 'wagmi';
 import { supabase } from '@/lib/supabase';
+import { useSiwe, RequireSiwe } from '@/app/providers/SiweProvider';
 
-export default function OnboardingPage() {
+/**
+ * Claim a username and a role — the first row a user ever writes.
+ *
+ * TWO things used to stop this working, and fixing either alone was not enough.
+ *
+ * 1. The write went out unauthenticated. `useAccount().address` is browser state and means
+ *    nothing to PostgREST, so the request arrived as `anon`, which migration 0001 revoked
+ *    every grant from: "permission denied for table profiles" (42501). Same defect as the
+ *    tip page. The form is now behind RequireSiwe, so a session exists before it is usable.
+ *
+ * 2. It used `upsert({ onConflict: 'wallet_address' })`. PostgREST turns that into
+ *    INSERT ... ON CONFLICT DO UPDATE SET wallet_address = ..., username = ..., role = ...,
+ *    and Postgres checks UPDATE privilege on every column in that SET list when it plans the
+ *    statement — whether or not a conflict ever occurs. `wallet_address` is deliberately
+ *    ungranted (it is what stops a session moving a profile onto another wallet and
+ *    redirecting its tips), so the upsert was refused for new and returning users alike.
+ *
+ * Hence the explicit insert-or-update below: it never names wallet_address in an UPDATE, so
+ * the one grant that must never exist still does not have to.
+ */
+function OnboardingForm() {
   const router = useRouter();
   const { address, isConnected } = useAccount();
+  const { signIn, refresh } = useSiwe();
   const [mounted, setMounted] = useState(false);
   
   const [loading, setLoading] = useState(false);
@@ -46,8 +68,25 @@ export default function OnboardingPage() {
       return;
     }
 
+    // Hold a verified session for THIS address before writing anything.
+    //
+    // The RequireSiwe gate around this form covers arrival at the page, not the moment of
+    // submission, and falling back to `authedWallet ?? address` was worse than useless: it
+    // wrote under an address nothing had verified, which is the 42501 this page was reported
+    // for. Gate on what the server says rather than on `authedWallet`, which is read once at
+    // mount and would still name a wallet whose token has since expired.
+    const wallet = address.toLowerCase();
+    if ((await refresh()) !== wallet) {
+      const ok = await signIn();
+      if (!ok) {
+        setError('Verify your wallet to continue — signing is free and sends no transaction.');
+        setLoading(false);
+        return;
+      }
+    }
+
     try {
-      // Step 1: Check if the username is already taken by another wallet
+      // Step 1: is this username already somebody else's?
       const { data: existingUser, error: checkError } = await supabase
         .from('profiles')
         .select('wallet_address')
@@ -58,33 +97,48 @@ export default function OnboardingPage() {
         throw new Error(checkError.message);
       }
 
-      if (existingUser && existingUser.wallet_address !== address.toLowerCase()) {
+      if (existingUser && existingUser.wallet_address !== wallet) {
         setError('This username is already taken. Please choose another one.');
         setLoading(false);
         return;
       }
 
-      // Step 2: Save the profile (using upsert to allow updates if the user is the owner)
-      const { error: sbError } = await supabase
+      // Step 2: does this wallet already have a profile? Decides insert vs update. An upsert
+      // would be shorter and cannot be used here — see the note at the top of this file.
+      const { data: ownProfile, error: ownError } = await supabase
         .from('profiles')
-        .upsert(
-          [
-            {
-              wallet_address: address.toLowerCase(), // DB requires lowercase (profiles_wallet_lowercase)
-              username: normalizedUsername,
-              role: formData.role
-            }
-          ],
-          { onConflict: 'wallet_address' }
-        );
+        .select('wallet_address')
+        .eq('wallet_address', wallet)
+        .maybeSingle();
+
+      if (ownError) {
+        throw new Error(ownError.message);
+      }
+
+      const { error: sbError } = ownProfile
+        ? await supabase
+            .from('profiles')
+            .update({ username: normalizedUsername, role: formData.role })
+            .eq('wallet_address', wallet)
+        : await supabase
+            .from('profiles')
+            .insert([{ wallet_address: wallet, username: normalizedUsername, role: formData.role }]);
 
       if (sbError) {
+        // The check in step 1 is a read followed by a write, so two people can pass it with
+        // the same name. The unique index added in 0001 is what actually decides, and it
+        // reports 23505 — which must read as "pick another name", not as a database error.
+        if (sbError.code === '23505') {
+          setError('This username was just taken. Please choose another one.');
+          setLoading(false);
+          return;
+        }
         throw new Error(sbError.message);
       }
-      
+
       // Redirect to profile creation upon success
       router.push('/create-profile');
-      
+
     } catch (err: any) {
       setError(err.message || 'An error occurred while creating your profile.');
     } finally {
@@ -95,13 +149,8 @@ export default function OnboardingPage() {
   if (!mounted) return null;
 
   return (
-    <div className="min-h-[calc(100vh-80px)] bg-[#050B14] w-full flex flex-col items-center justify-center p-6 relative overflow-x-hidden text-slate-300">
-      
-      {/* Background ambient light effect */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-2xl h-[400px] bg-blue-600/10 blur-[120px] rounded-full pointer-events-none z-0"></div>
+    <div className="mt-4">
 
-      <div className="relative z-10 w-full max-w-md mt-4">
-        
         {/* Form Card */}
         <div className="bg-[#0f172a]/90 border border-slate-700/50 p-8 rounded-3xl backdrop-blur-xl shadow-[0_0_40px_rgba(0,0,0,0.5)]">
           <div className="mb-6">
@@ -210,6 +259,24 @@ export default function OnboardingPage() {
           </form>
         </div>
 
+    </div>
+  );
+}
+
+export default function OnboardingPage() {
+  return (
+    <div className="min-h-[calc(100vh-80px)] bg-[#050B14] w-full flex flex-col items-center justify-center p-6 relative overflow-x-hidden text-slate-300">
+
+      {/* Background ambient light effect */}
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-2xl h-[400px] bg-blue-600/10 blur-[120px] rounded-full pointer-events-none z-0"></div>
+
+      {/* autoPrompt: a user only lands here to create a profile, so ask for the signature on
+          arrival rather than making them find a button first. Without a session the insert
+          goes out as `anon` and is refused with 42501. */}
+      <div className="relative z-10 w-full max-w-md">
+        <RequireSiwe autoPrompt>
+          <OnboardingForm />
+        </RequireSiwe>
       </div>
     </div>
   );

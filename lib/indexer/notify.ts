@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { ResolutionPath } from '../paynode';
+import { ResolutionPath, formatUSDC } from '../paynode';
 
 /**
  * Notifications derived from chain events.
@@ -20,9 +20,18 @@ export type DisputeEventName = 'DisputeRaised' | 'DisputeResolved';
 export type NotificationRow = {
   wallet_address: string;
   message: string;
-  type: 'DISPUTE_RAISED' | 'DISPUTE_RESOLVED';
+  type: 'DISPUTE_RAISED' | 'DISPUTE_RESOLVED' | 'NEW_TIP';
   link: string;
   event_key: string;
+};
+
+/** A tip this indexer has just confirmed against the chain. Amounts come from the transaction. */
+export type VerifiedTip = {
+  sender_wallet: string;
+  receiver_wallet: string;
+  tx_hash: string;
+  /** Exact wei the transaction moved — never the sender's self-reported `tips.amount` float. */
+  amount_wei: bigint;
 };
 
 /** The columns of a projects row that notifications are addressed from. */
@@ -151,6 +160,69 @@ export async function notifyDisputeEvent(
     .upsert(rows, { onConflict: 'event_key,wallet_address', ignoreDuplicates: true })
     .select('id');
   if (error) throw new Error(`cannot insert notifications: ${error.message}`);
+
+  return data?.length ?? 0;
+}
+
+// -------------------------------------------------------------------------------------
+// TIPS
+// -------------------------------------------------------------------------------------
+
+/**
+ * Event key for a tip. A tip is a bare native transfer and emits NO LOG, so it has no
+ * logIndex to key on the way dispute notifications do. The transaction hash alone is
+ * unique, and the `tip:` prefix keeps it from ever colliding with a '<txHash>:<logIndex>'
+ * key from migration 0007.
+ */
+export const tipEventKey = (txHash: string) => `tip:${txHash.toLowerCase()}`;
+
+const shortWallet = (w: string) => `${w.slice(0, 6)}...${w.slice(-4)}`;
+
+/**
+ * The recipient's "you were tipped" notification.
+ *
+ * Only the receiver is notified: the sender watched their own transaction confirm and needs
+ * no telling. The amount is formatted from `amount_wei`, which came off the transaction —
+ * `tips.amount` is a number the sender typed and is not authority for anything.
+ */
+export function buildTipNotification(tip: VerifiedTip): NotificationRow {
+  return {
+    wallet_address: lower(tip.receiver_wallet),
+    message: `You received a ${formatUSDC(tip.amount_wei)} tip from ${shortWallet(lower(tip.sender_wallet))}!`,
+    type: 'NEW_TIP',
+    link: '/dashboard',
+    event_key: tipEventKey(tip.tx_hash),
+  };
+}
+
+/**
+ * Tell a builder about a tip, once the transfer is confirmed on-chain.
+ *
+ * The browser cannot do this. notifications_insert_counterparty (migrations 0001/0006) only
+ * accepts a recipient who shares a project with the sender, and a tipper usually shares
+ * nothing with the person they are tipping — so the insert the tip page used to fire was
+ * rejected by RLS every single time, silently, because its result was never checked.
+ *
+ * Widening that policy to "anyone who inserted a tip row naming you" was the tempting fix
+ * and the wrong one: tips_insert_as_sender lets any signed-in wallet claim a tip to any
+ * address with a junk tx_hash, so it would have turned `notifications` into exactly the
+ * spam channel addressable at any wallet that 0001 was written to prevent. Sending from
+ * here instead means a notification exists only where a real transfer does.
+ *
+ * Returns 1 when a row was created, 0 on a replay. THROWS on a database error; the caller
+ * decides what that is worth.
+ */
+export async function notifyVerifiedTip(db: SupabaseClient, tip: VerifiedTip): Promise<number> {
+  // Same ON CONFLICT DO NOTHING as the dispute path: the indexer retries tips it could not
+  // reach an RPC for, and must not notify twice for one transfer.
+  const { data, error } = await db
+    .from('notifications')
+    .upsert([buildTipNotification(tip)], {
+      onConflict: 'event_key,wallet_address',
+      ignoreDuplicates: true,
+    })
+    .select('id');
+  if (error) throw new Error(`cannot insert tip notification: ${error.message}`);
 
   return data?.length ?? 0;
 }

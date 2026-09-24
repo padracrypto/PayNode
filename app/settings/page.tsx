@@ -5,10 +5,22 @@ import { useRouter } from 'next/navigation';
 import { useAccount } from 'wagmi';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import { useSiwe, RequireSiwe } from '@/app/providers/SiweProvider';
 
-export default function UserSettingsPage() {
+/**
+ * Edit your own profile. Same two corrections as /onboarding and /create-profile:
+ *
+ *   * the save went out as `anon` and was refused with 42501, so it is now behind SIWE;
+ *   * the row was located with `.ilike('wallet_address', address)` on a checksummed address.
+ *     Migration 0001 normalised every wallet to lowercase and added a CHECK constraint to
+ *     keep it that way, so a case-insensitive match is no longer needed — and `ilike` cannot
+ *     use the profiles_wallet_key index, which is the mixed `.eq`/`.ilike` usage 0001 called
+ *     out as a source of silent misses.
+ */
+function SettingsForm() {
   const router = useRouter();
   const { address, isConnected } = useAccount();
+  const { authedWallet, signIn, refresh } = useSiwe();
   const [mounted, setMounted] = useState(false);
   
   const [loading, setLoading] = useState(true);
@@ -23,18 +35,18 @@ export default function UserSettingsPage() {
 
   useEffect(() => {
     if (isConnected && address) {
-      loadProfile(address);
+      loadProfile((authedWallet ?? address).toLowerCase());
     } else if (mounted && !isConnected) {
       setLoading(false);
     }
-  }, [isConnected, address, mounted]);
+  }, [isConnected, address, authedWallet, mounted]);
 
   const loadProfile = async (wallet: string) => {
     setLoading(true);
     const { data } = await supabase
       .from('profiles')
       .select('*')
-      .ilike('wallet_address', wallet)
+      .eq('wallet_address', wallet)
       .maybeSingle();
       
     if (data) {
@@ -71,7 +83,20 @@ export default function UserSettingsPage() {
     e.preventDefault();
     if (!profile || !address) return;
     setSaving(true);
-    
+
+    // Same guard as /onboarding and /create-profile: the gate covers arrival at the page, not
+    // the moment of submission, and this is a form a user may leave open for a long time —
+    // so gate on the server's answer, not on the authedWallet read once at mount.
+    const wallet = address.toLowerCase();
+    if ((await refresh()) !== wallet) {
+      const ok = await signIn();
+      if (!ok) {
+        setSaving(false);
+        alert('Verify your wallet to save — signing is free and sends no transaction.');
+        return;
+      }
+    }
+
     const { error } = await supabase
       .from('profiles')
       .update({
@@ -82,15 +107,17 @@ export default function UserSettingsPage() {
         linkedin: profile.linkedin,
         website: profile.website,
       })
-      .ilike('wallet_address', address);
+      .eq('wallet_address', wallet);
 
     setSaving(false);
-    
+
     if (!error) {
       router.push(`/${profile.username}`);
     } else {
-      console.error("Update error:", error);
-      alert("Error updating profile.");
+      // The message matters: "permission denied for table profiles" and "no session" are
+      // different problems for the user, and an alert saying neither helped nobody.
+      console.error('Update error:', error);
+      alert(`Error updating profile: ${error.message}`);
     }
   };
 
@@ -180,5 +207,13 @@ export default function UserSettingsPage() {
         </div>
       </form>
     </div>
+  );
+}
+
+export default function UserSettingsPage() {
+  return (
+    <RequireSiwe autoPrompt>
+      <SettingsForm />
+    </RequireSiwe>
   );
 }

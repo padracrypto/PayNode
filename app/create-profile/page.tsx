@@ -4,10 +4,19 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAccount } from 'wagmi';
 import { supabase } from '@/lib/supabase';
+import { useSiwe, RequireSiwe } from '@/app/providers/SiweProvider';
 
-export default function CreateProfilePage() {
+/**
+ * Step two of onboarding: the presentation columns of your own profile row.
+ *
+ * Gated on SIWE for the same reason /onboarding is: the update went out as `anon` and was
+ * refused with 42501 before it could touch a row. Every column written here IS in the 0001
+ * update grant, so once the request carries a session it needs nothing further.
+ */
+function CreateProfileForm() {
   const router = useRouter();
   const { address, isConnected } = useAccount();
+  const { authedWallet, signIn, refresh } = useSiwe();
   const [loading, setLoading] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [error, setError] = useState('');
@@ -30,9 +39,11 @@ export default function CreateProfilePage() {
   useEffect(() => {
     setMounted(true);
     if (isConnected && address) {
-      fetchExistingProfile(address.toLowerCase());
+      fetchExistingProfile((authedWallet ?? address).toLowerCase());
     }
-  }, [isConnected, address]);
+    // authedWallet is a dependency: it resolves after the session fetch returns, and the
+    // form must load against the wallet the write will actually be attributed to.
+  }, [isConnected, address, authedWallet]);
 
   const fetchExistingProfile = async (userWallet: string) => {
     try {
@@ -99,6 +110,19 @@ export default function CreateProfilePage() {
     setLoading(true);
     setError('');
 
+    // Same guard as /onboarding: the gate around this form covers arrival, not the moment of
+    // submission. Gate on the server's answer rather than on authedWallet, which is read once
+    // at mount and keeps naming a wallet whose 12h token may since have expired.
+    const wallet = address.toLowerCase();
+    if ((await refresh()) !== wallet) {
+      const ok = await signIn();
+      if (!ok) {
+        setError('Verify your wallet to save — signing is free and sends no transaction.');
+        setLoading(false);
+        return;
+      }
+    }
+
     try {
       const { error: updateError } = await supabase
         .from('profiles')
@@ -110,7 +134,7 @@ export default function CreateProfilePage() {
           linkedin: socials.linkedin,
           website: socials.website
         })
-        .eq('wallet_address', address.toLowerCase());
+        .eq('wallet_address', wallet);
 
       if (updateError) throw updateError;
 
@@ -226,5 +250,13 @@ export default function CreateProfilePage() {
         </form>
       </div>
     </div>
+  );
+}
+
+export default function CreateProfilePage() {
+  return (
+    <RequireSiwe autoPrompt>
+      <CreateProfileForm />
+    </RequireSiwe>
   );
 }

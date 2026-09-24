@@ -22,8 +22,28 @@ Do these in order. Step 1 must precede step 3 — the new indexer calls function
 and fails loudly (HTTP 500) without them.
 
 1. **Supabase → SQL editor**, apply in order, each once: `0001_rls_siwe.sql`, `0002_indexer.sql`,
-   `0003_projects_created_at.sql`, `0004_indexer_lock.sql`, `0005_arbitrator_read.sql`.
+   `0003_projects_created_at.sql`, `0004_indexer_lock.sql`, `0005_arbitrator_read.sql`,
+   `0006_arbitrator_notify.sql`, `0007_notification_event_key.sql`, `0008_tips_rls_repair.sql`,
+   `0009_profiles_rls_repair.sql`.
    Then check `select * from public.indexer_state;` returns one row, `id = 'escrow'`.
+
+   `0008` and `0009` are not optional on a database that has been live. Row level security was
+   measured switched off on **both** `public.tips` and `public.profiles` in the staging project —
+   the grants and CHECK constraints from `0001` were in force, but the policies were not being
+   consulted at all. Until they are applied, any signed-in wallet can read every tip ever sent,
+   insert tips attributed to wallets it does not control, and rewrite any other user's username,
+   bio, skills and links. `0009` also grants `update (role)` so `/onboarding` can change a
+   returning user's client/builder answer; without it that save fails with 42501.
+
+   Apply `0008` before `0009` — `0009` ends with an assertion that every app table has RLS
+   enabled and will refuse to commit while `tips` is still open. Confirm both took with:
+
+   ```sql
+   select relname, relrowsecurity from pg_class
+    where oid in ('public.tips'::regclass, 'public.profiles'::regclass,
+                  'public.projects'::regclass, 'public.notifications'::regclass);
+   -- expect relrowsecurity = t for all four
+   ```
 2. **Vercel → Environment Variables** (scope **Production**): add every variable in §2.
 3. **Deploy.** The build runs the environment gate and refuses to ship if anything is missing or malformed.
 4. **Verify** with §4.
@@ -142,7 +162,7 @@ within about a minute. Alert on any non-2xx from the scheduler.
 
 Replacing the RPC and contract values is necessary but **not sufficient**. Testnet state must not leak across:
 
-1. **Use a separate Supabase project for mainnet** (apply migrations `0001`–`0005`). Reusing the staging database
+1. **Use a separate Supabase project for mainnet** (apply migrations `0001`–`0009`). Reusing the staging database
    would leave `indexer_state.last_indexed_block` holding a *testnet* block number, and `projects.blockchain_id`
    values from testnet colliding with mainnet project ids. If you must reuse it, wipe the app tables and reset
    the cursor first (`update public.indexer_state set last_indexed_block = 0, locked_by = null, locked_until = null`).
