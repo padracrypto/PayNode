@@ -32,6 +32,7 @@ import {
 import {
   DISPUTE_WINDOWS,
   deriveDisputeStage,
+  resolutionPaths,
   resolverAvailability,
   STAGE_LABEL,
   type DeliverableRow,
@@ -73,6 +74,10 @@ export type DisputePanelProps = {
   hasResolver: boolean;
   /** `resolverFor(projectId)` — the epoch key the contract will verify against. */
   expectedSigner: string | undefined;
+  /** `onchain.resolverEpoch` — the generation that key belongs to, quoted in the path list. */
+  resolverEpoch?: number;
+  /** `deriveActions().canProposeSettlement` — whether PATH 3 is this viewer's to start. */
+  canProposeSettlement: boolean;
 
   /** True when `deriveActions().canDeliver` — the builder may submit right now. */
   canDeliver: boolean;
@@ -104,8 +109,11 @@ export function DisputePanel(props: DisputePanelProps) {
     clientLabel,
     builderLabel,
     hasArbitrator,
+    arbitratorLabel,
     hasResolver,
     expectedSigner,
+    resolverEpoch,
+    canProposeSettlement,
     canDeliver,
     canRaiseDispute,
     txPending,
@@ -156,6 +164,18 @@ export function DisputePanel(props: DisputePanelProps) {
   }, [resolution]);
 
   const availability = resolverAvailability({ status, hasArbitrator, hasResolver });
+
+  /**
+   * The same three routes the warning modal and the page's Disputed block describe.
+   *
+   * The panel does not re-render the whole list — the page shows it once, directly above the
+   * controls for PATHS 1 and 3, and a second copy on the same screen would make both read as
+   * less authoritative. What the panel needs from it is the wording for PATH 2, which it owns:
+   * why the route is closed when it is, and which routes are left when it is.
+   */
+  const paths = resolutionPaths({ hasArbitrator, hasResolver, arbitratorLabel, resolverEpoch });
+  const resolverPath = paths.find((p) => p.id === 'resolver');
+  const otherOpenPaths = paths.filter((p) => p.available && p.id !== 'resolver');
 
   const requestRuling = async () => {
     if (projectId === undefined) return;
@@ -256,8 +276,25 @@ export function DisputePanel(props: DisputePanelProps) {
           {(stage === 'evidence_open' || stage === 'arbitrating') && (
             <div className="border-t border-amber-900/30 pt-6">
               {!availability.available ? (
-                <Alert tone="neutral" label="Automatic resolution unavailable">
-                  {availability.reason}
+                /* The reason comes from the shared path descriptor, so this box and the path
+                   list above it cannot give two different accounts of why PATH 2 is off. The
+                   remaining routes are named from the same data rather than hardcoded: on a
+                   project with a designated arbitrator there are two of them, and on one with
+                   neither adjudicator there is only mutual settlement. */
+                <Alert tone="neutral" label="Path 2 unavailable — automatic AI arbitrator">
+                  {resolverPath?.closedBecause ?? availability.reason}
+                  {otherOpenPaths.length > 0 && (
+                    <>
+                      {' '}
+                      Still open:{' '}
+                      <span className="text-slate-200 font-bold">
+                        {joinTitles(otherOpenPaths.map((p) => p.title.toLowerCase()))}
+                      </span>
+                      . {otherOpenPaths.length === 1 ? 'Its controls are' : 'Their controls are'} in
+                      the Dispute open panel above. Failing that, the {DISPUTE_WINDOWS.staleDays}-day
+                      timeout closes it on fixed terms.
+                    </>
+                  )}
                 </Alert>
               ) : stage === 'arbitrating' ? (
                 <div className="bg-[#0f172a] border border-amber-900/40 rounded-2xl p-5">
@@ -274,7 +311,12 @@ export function DisputePanel(props: DisputePanelProps) {
                 </div>
               ) : (
                 <div className="bg-[#0f172a] border border-slate-800/80 rounded-2xl p-5">
-                  <SectionLabel>Ask for a ruling</SectionLabel>
+                  <div className="flex items-start justify-between gap-3 flex-wrap">
+                    <SectionLabel>Ask for a ruling</SectionLabel>
+                    {/* Named, and numbered against the contract, so the button is recognisably
+                        the path the list above calls available rather than an unrelated action. */}
+                    <Badge tone="good">Path 2 · Automatic AI arbitrator</Badge>
+                  </div>
                   <p className="text-sm text-slate-400 leading-relaxed mt-2 mb-4">
                     The arbitrator will read the brief, every deliverable, the blockchain timeline
                     and both statements, then divide the escrow. It rules{' '}
@@ -292,6 +334,17 @@ export function DisputePanel(props: DisputePanelProps) {
                     >
                       Request a binding ruling
                     </Button>
+                  )}
+
+                  {/* The exit from this path, stated where the irreversible button is rather than
+                      only in the overview. A party about to spend their one ruling should be able
+                      to see that a split they both choose is still available and still instant. */}
+                  {canProposeSettlement && (
+                    <p className="text-xs text-slate-500 leading-relaxed mt-3">
+                      Prefer to keep control of the number? Path 3, a mutual settlement, stays open
+                      until the moment a ruling lands — propose a split in the Dispute open panel above
+                      and it pays out as soon as the other party accepts.
+                    </p>
                   )}
 
                   {requestOutcome && (
@@ -357,9 +410,11 @@ export function DisputePanel(props: DisputePanelProps) {
           </Alert>
           <p className="text-sm text-slate-400 leading-relaxed mt-4">
             Retrying will not help — a declined ruling is recorded permanently and re-requesting
-            returns the same answer. Two routes remain open: agree a settlement directly with the
-            other party, or wait out the {DISPUTE_WINDOWS.staleDays}-day timeout, after which
-            anyone can close the dispute{' '}
+            returns the same answer. Path 2 is closed for this project from here on. What remains
+            is <span className="text-slate-200 font-bold">Path 3, a mutual settlement</span>: agree
+            a percentage split with the other party in the Dispute open panel above and it pays out on
+            acceptance. Failing that, the {DISPUTE_WINDOWS.staleDays}-day timeout lets anyone close
+            the dispute{' '}
             {deliveredBeforeDispute ? 'with a 50/50 split' : 'with a full refund to the client'}.
           </p>
         </Card>
@@ -407,6 +462,15 @@ export function DisputePanel(props: DisputePanelProps) {
 /* -------------------------------------------------------------------------- */
 /*                                 SUB-PARTS                                  */
 /* -------------------------------------------------------------------------- */
+
+/**
+ * "a and b" rather than "a, b" — the list is at most two items long (a project has one
+ * adjudicator, plus mutual settlement), and at that length a comma reads as a truncated list.
+ */
+function joinTitles(titles: string[]): string {
+  if (titles.length <= 1) return titles[0] ?? '';
+  return `${titles.slice(0, -1).join(', ')} and ${titles[titles.length - 1]}`;
+}
 
 /**
  * Render the request route's answer.

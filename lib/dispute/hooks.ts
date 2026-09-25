@@ -125,6 +125,29 @@ export function useDeliverables(projectRowId: number | undefined, stage: Dispute
 }
 
 /**
+ * Whether this project has any structured submission on record.
+ *
+ * Exists so a caller can tell the legacy `projects.delivery_notes` / `delivery_links` pair
+ * apart from the `deliverables` table that superseded it. Those columns are written as a
+ * mirror of the newest submission, so rendering both at once shows the same description and
+ * the same first artifact twice — once in the submission record and once in the card below it.
+ * A reader cannot tell a mirror from a second submission, and on an evidentiary surface that
+ * is worse than a cosmetic bug.
+ *
+ * Deliberately shares `useDeliverables`' query key, so this adds an observer to the existing
+ * cache entry rather than a second request. The stage is `'inert'` because the panel's own
+ * observer owns the polling cadence; this one only reads what that fetch already produced.
+ *
+ * `false` while loading and for a session that cannot read the table, which is the safe
+ * default: the legacy columns stay visible rather than blanking the only record such a
+ * reader has.
+ */
+export function useHasDeliverables(projectRowId: number | undefined): boolean {
+  const { data } = useDeliverables(projectRowId, 'inert');
+  return (data?.length ?? 0) > 0;
+}
+
+/**
  * Both parties' filed statements, oldest first.
  *
  * Ordered ascending and returned whole rather than grouped by role: the threaded view needs

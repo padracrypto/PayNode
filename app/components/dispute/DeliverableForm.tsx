@@ -42,7 +42,7 @@ export function DeliverableForm({
    * `markDelivered` from here, and mirrors the row into the legacy `delivery_notes` /
    * `delivery_links` columns that older readers still render.
    */
-  onRecorded: (row: DeliverableRow) => void;
+  onRecorded: (row: DeliverableRow) => void | Promise<void>;
 }) {
   const [title, setTitle] = React.useState('');
   const [description, setDescription] = React.useState('');
@@ -53,49 +53,102 @@ export function DeliverableForm({
   const parsed = React.useMemo(() => parseUrlList(urlsRaw), [urlsRaw]);
   const busy = submit.isPending || txPending;
 
+  /**
+   * The row this form has already written, and the composition it was written from.
+   *
+   * THIS IS THE DUPLICATE-SUBMISSION FIX, and what makes it necessary is the deliberate choice
+   * documented below: the fields are NOT cleared after a successful insert, so a rejected wallet
+   * prompt does not also throw away what the builder typed. That is right for the typing and
+   * wrong for the record — pressing Submit again after a rejected or failed `markDelivered`
+   * inserted a SECOND identical row, and `deliverables` has no unique constraint to catch it.
+   * Both rows then appear in the submission record seconds apart, and <Timestamp /> renders to
+   * the minute, so they read as one entry duplicated.
+   *
+   * Keyed by a signature of the composition rather than a plain boolean, because the two cases
+   * differ: retrying the SAME submission must reuse the committed row and re-send only the
+   * transaction, while editing the title, description or links first is a genuinely different
+   * submission and should record a new one.
+   */
+  const [recorded, setRecorded] = React.useState<{ signature: string; row: DeliverableRow } | null>(
+    null,
+  );
+  const signature = React.useMemo(
+    () => JSON.stringify([title.trim(), description.trim(), parsed.urls]),
+    [title, description, parsed.urls],
+  );
+  const alreadyRecorded = recorded && recorded.signature === signature ? recorded.row : null;
+
+  /**
+   * Synchronous re-entrancy latch.
+   *
+   * `busy` disables the button, but it is React state: it is true only a render after the click,
+   * and a second click landing inside that window reaches this handler with the button still
+   * live. A ref flips in the same tick as the first click, so the second returns before it can
+   * dispatch anything. Submitting with Return from a text field goes through the same handler
+   * and is covered by the same latch.
+   */
+  const inFlight = React.useRef(false);
+
+  // A new revision round is a new submission. Dropping the memo rather than reusing it keeps
+  // `revision_index` honest — the retry path must never attach a row from an earlier round.
+  React.useEffect(() => {
+    setRecorded(null);
+  }, [revisionIndex]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (inFlight.current) return;
+    inFlight.current = true;
     setLocalError(null);
 
-    // At least one artifact. A submission with no artifact is the single weakest thing a
-    // builder can put on the record — the resolver's standard says in as many words that "a
-    // submission record with artifacts is evidence, a description of effort is not" — so the
-    // form refuses it rather than letting someone lose a dispute to an omission.
-    if (parsed.urls.length === 0) {
-      setLocalError(
-        'Add at least one artifact link — a pull request, a live preview, a design file. ' +
-          'A description of the work without anything to inspect carries very little weight if ' +
-          'this is ever disputed.',
-      );
-      return;
-    }
-    if (parsed.rejected.length > 0) {
-      setLocalError(
-        `These lines are not valid http(s) links and would not be shown to the other party: ` +
-          `${parsed.rejected.join(', ')}`,
-      );
-      return;
-    }
-    if (description.length > MAX_BODY_CHARS) {
-      setLocalError('The description is longer than the resolver will read. Trim it first.');
-      return;
-    }
-
     try {
-      const row = await submit.mutateAsync({
-        projectRowId,
-        builder,
-        title,
-        description,
-        artifactUrls: parsed.urls,
-        revisionIndex,
-      });
+      // At least one artifact. A submission with no artifact is the single weakest thing a
+      // builder can put on the record — the resolver's standard says in as many words that "a
+      // submission record with artifacts is evidence, a description of effort is not" — so the
+      // form refuses it rather than letting someone lose a dispute to an omission.
+      if (parsed.urls.length === 0) {
+        setLocalError(
+          'Add at least one artifact link — a pull request, a live preview, a design file. ' +
+            'A description of the work without anything to inspect carries very little weight if ' +
+            'this is ever disputed.',
+        );
+        return;
+      }
+      if (parsed.rejected.length > 0) {
+        setLocalError(
+          `These lines are not valid http(s) links and would not be shown to the other party: ` +
+            `${parsed.rejected.join(', ')}`,
+        );
+        return;
+      }
+      if (description.length > MAX_BODY_CHARS) {
+        setLocalError('The description is longer than the resolver will read. Trim it first.');
+        return;
+      }
+
+      // The insert is skipped entirely when this exact submission is already on record, so a
+      // retry after a failed transaction re-sends the transaction and nothing else.
+      const row =
+        alreadyRecorded ??
+        (await submit.mutateAsync({
+          projectRowId,
+          builder,
+          title,
+          description,
+          artifactUrls: parsed.urls,
+          revisionIndex,
+        }));
+      if (!alreadyRecorded) setRecorded({ signature, row });
+
       // Committed. The page now sends markDelivered; the fields stay filled until the
-      // transaction resolves, so a wallet rejection does not also lose the typing.
-      onRecorded(row);
+      // transaction resolves, so a wallet rejection does not also lose the typing. Awaited so
+      // the latch covers the transaction too, not just the insert.
+      await onRecorded(row);
     } catch {
       // Surfaced from `submit.error` below — swallowed here so a rejected promise does not
       // reach the console as an unhandled rejection.
+    } finally {
+      inFlight.current = false;
     }
   };
 
@@ -201,8 +254,24 @@ export function DeliverableForm({
         </div>
       )}
 
-      <Button type="submit" tone="builder" busy={busy} busyLabel={submit.isPending ? 'Recording…' : 'Confirm in your wallet…'} className="w-full mt-6 py-4">
-        Submit and mark delivered
+      {alreadyRecorded && !busy && (
+        <div className="mt-5">
+          <Alert tone="good" label="Already on record">
+            This submission is saved — only the on-chain step is left. Pressing the button again
+            re-sends that transaction and will not add a second entry to the record. Editing
+            anything above records a new submission instead.
+          </Alert>
+        </div>
+      )}
+
+      <Button
+        type="submit"
+        tone="builder"
+        busy={busy}
+        busyLabel={submit.isPending ? 'Recording…' : 'Confirm in your wallet…'}
+        className="w-full mt-6 py-4"
+      >
+        {alreadyRecorded ? 'Mark delivered on-chain' : 'Submit and mark delivered'}
       </Button>
 
       <p className="text-xs text-slate-600 mt-3 text-center leading-relaxed">

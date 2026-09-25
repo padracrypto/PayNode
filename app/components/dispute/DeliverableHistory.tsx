@@ -46,7 +46,7 @@ export function DeliverableHistory({
     );
   }
 
-  const rows = data ?? [];
+  const rows = dedupeById(data ?? []);
 
   if (rows.length === 0) {
     return (
@@ -71,6 +71,27 @@ export function DeliverableHistory({
       </ol>
     </div>
   );
+}
+
+/**
+ * Collapse rows that share a primary key.
+ *
+ * A belt to the form's braces, not a substitute for them. The duplicate entries this list showed
+ * were two genuinely distinct rows — the form re-inserted on a retry — and <DeliverableForm />
+ * is where that is fixed, because no display-layer filter can decide whether two rows with
+ * different ids are one submission recorded twice or two the builder meant to make. What this
+ * does cover is the cheaper failure: the same row arriving twice in one response, which would
+ * otherwise also collide on React's `key` and render an entry the count disagrees with.
+ *
+ * The first occurrence wins, so the ascending order the query established survives.
+ */
+function dedupeById(rows: DeliverableRow[]): DeliverableRow[] {
+  const seen = new Set<string>();
+  return rows.filter((row) => {
+    if (seen.has(row.id)) return false;
+    seen.add(row.id);
+    return true;
+  });
 }
 
 function DeliverableEntry({

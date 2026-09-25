@@ -34,6 +34,9 @@ import {
 import { useSiwe } from '@/app/providers/SiweProvider';
 import { DisputePanel } from '@/app/components/dispute/DisputePanel';
 import { DisputeWarningModal } from '@/app/components/dispute/DisputeWarningModal';
+import { ResolutionPaths } from '@/app/components/dispute/ResolutionPaths';
+import { useHasDeliverables } from '@/lib/dispute/hooks';
+import { resolutionPaths } from '@/lib/dispute/types';
 import type { DeliverableRow, ViewerRole } from '@/lib/dispute/types';
 
 const PATH_LABEL: Record<number, string> = {
@@ -252,6 +255,19 @@ export default function ProjectPage() {
     ((onchain?.status === ProjectStatus.Disputed || onchain?.status === ProjectStatus.Refunded) &&
       onchain.preDispute === ProjectStatus.Delivered);
 
+  /**
+   * Whether `public.deliverables` holds anything for this project.
+   *
+   * Gates the legacy notes/link block below. `delivery_notes` and `delivery_links` are written
+   * by `handleDeliverableRecorded` as a mirror of the newest submission, so once a structured
+   * row exists the block restates the same description and the same first artifact that the
+   * submission record above already shows — the same content rendered twice, in two cards, with
+   * nothing to tell a reader that it is one submission rather than two. The columns stay as the
+   * only record for projects delivered before that table existed, which is exactly the case this
+   * flag distinguishes.
+   */
+  const hasDeliverables = useHasDeliverables(project?.id != null ? Number(project.id) : undefined);
+
   const deliveredCard =
     onchain?.status === ProjectStatus.Completed
       ? { border: 'border-emerald-900/30', text: 'text-emerald-400', title: 'Delivered Work (Approved)' }
@@ -340,6 +356,33 @@ export default function ProjectPage() {
       cancelled = true;
     };
   }, [hasArbitrator, arbitratorAddr]);
+
+  /**
+   * The three resolution paths, for THIS project.
+   *
+   * One derivation feeding three surfaces: the Disputed block below, <DisputeWarningModal />
+   * before a dispute exists, and <DisputePanel />, which reads the PATH 2 descriptor out of its
+   * own call to decide how to explain the ruling request. Built from chain reads only —
+   * `projectArbitrator` and `resolverFor(projectId)` — so nothing here can advertise a route the
+   * contract would refuse. The label prefers the arbitrator's PayNode handle when the profile
+   * lookup above found one, and falls back to the shortened address.
+   */
+  const arbitratorLabel = !hasArbitrator
+    ? undefined
+    : arbitratorUsername
+      ? `@${arbitratorUsername}`
+      : short(arbitratorAddr as string);
+
+  const disputePaths = useMemo(
+    () =>
+      resolutionPaths({
+        hasArbitrator,
+        hasResolver,
+        arbitratorLabel,
+        resolverEpoch: onchain?.resolverEpoch,
+      }),
+    [hasArbitrator, hasResolver, arbitratorLabel, onchain?.resolverEpoch],
+  );
 
   useEffect(() => {
     if (!project?.deadline) return;
@@ -765,14 +808,9 @@ export default function ProjectPage() {
         role={viewerRole}
         delivered={onchain?.status === ProjectStatus.Delivered}
         hasArbitrator={hasArbitrator}
-        arbitratorLabel={
-          hasArbitrator
-            ? arbitratorUsername
-              ? `@${arbitratorUsername}`
-              : short(arbitratorAddr as string)
-            : undefined
-        }
+        arbitratorLabel={arbitratorLabel}
         hasResolver={hasResolver}
+        resolverEpoch={onchain?.resolverEpoch}
         busy={loading && activeAction === 'Disputed'}
         onConfirm={raiseDispute}
         onCancel={() => setShowDisputeModal(false)}
@@ -993,30 +1031,49 @@ export default function ProjectPage() {
               ============================================================ */}
           {onchain?.status === ProjectStatus.Disputed && (
             <div className="bg-amber-950/20 border border-amber-900/50 p-6 md:p-8 rounded-3xl space-y-6">
+              {/* The routes out, from the one place that decides them.
+                  `resolutionPaths()` in lib/dispute/types.ts answers this for the warning modal
+                  and for <DisputePanel /> too, so a party cannot be told here that a path is open
+                  and told there that it is closed. The prose ladder this replaces
+                  (`hasArbitrator ? … : hasResolver ? … : …`) was the third copy of that logic.
+
+                  It sits at the top of this block on purpose: the controls for PATH 1 and PATH 3
+                  are directly below it, and the `hints` point at them by name. PATH 2's control
+                  lives in <DisputePanel /> further down, which is what its hint says. */}
               <div>
                 <h3 className="text-amber-400 font-black text-lg mb-1">Dispute open</h3>
                 <p className="text-sm text-slate-400">
                   {isArbitrator ? (
-                    <>You are the designated arbitrator for this project. Your ruling is final.</>
-                  ) : hasArbitrator ? (
                     <>
-                      Awaiting a ruling from the agreed arbitrator{' '}
-                      <span className="font-mono text-slate-300">{short(arbitratorAddr as string)}</span>. You can also
-                      settle directly with the other party.
-                    </>
-                  ) : hasResolver ? (
-                    <>
-                      No arbitrator was named for this project, so the platform resolver may issue a ruling. You can
-                      also settle directly with the other party.
+                      You are the designated arbitrator for this project. Your ruling is final, and
+                      it is the only one that will be issued — automatic resolution is disabled
+                      wherever an arbitrator was named.
                     </>
                   ) : (
                     <>
-                      No arbitrator was named and automatic resolution is not enabled. Settle directly with the other
-                      party — or, if you cannot agree, anyone can settle it after 30 days.
+                      The escrow is frozen until this is resolved. Here is every route out of it,
+                      as it stands for this project.
                     </>
                   )}
                 </p>
               </div>
+
+              <ResolutionPaths
+                paths={disputePaths}
+                activePathId={hasOffer ? 'settlement' : undefined}
+                hints={{
+                  arbitrator: isArbitrator
+                    ? 'This is yours to rule on — the controls are directly below.'
+                    : undefined,
+                  resolver:
+                    'Either of you can ask for this ruling in the Evidence and claims panel below.',
+                  settlement: hasOffer
+                    ? 'An offer is on the table right now — see it below.'
+                    : act?.canProposeSettlement
+                      ? 'Propose a split below. Nothing is committed until the other party accepts.'
+                      : undefined,
+                }}
+              />
 
               {/* ---- PATH 1: the designated arbitrator's ruling ---- */}
               {isArbitrator && (
@@ -1153,9 +1210,11 @@ export default function ProjectPage() {
             clientLabel={clientLabel}
             builderLabel={builderLabel}
             hasArbitrator={hasArbitrator}
-            arbitratorLabel={hasArbitrator ? short(arbitratorAddr as string) : undefined}
+            arbitratorLabel={arbitratorLabel}
             hasResolver={hasResolver}
             expectedSigner={resolverAddr as string | undefined}
+            resolverEpoch={onchain?.resolverEpoch}
+            canProposeSettlement={act?.canProposeSettlement ?? false}
             canDeliver={act?.canDeliver ?? false}
             canRaiseDispute={act?.canRaiseDispute ?? false}
             txPending={loading}
@@ -1274,13 +1333,16 @@ export default function ProjectPage() {
                 {deliveredCard.title}
               </h2>
 
-              {/* The legacy single-delivery fields, rendered only when they hold something.
-                  The structured submission history in <DisputePanel /> above is the real record
-                  now; these columns are a mirror of the newest submission, and for projects
-                  delivered before that table existed they are the ONLY record. Hiding the block
-                  when both are empty keeps a new project from showing "No notes provided"
-                  directly above a full history. */}
-              {(project.delivery_notes || project.delivery_links) && (
+              {/* The legacy single-delivery fields — a FALLBACK, not a second view.
+                  The structured submission record in <DisputePanel /> above is the real record
+                  now; these columns are only a mirror of the newest submission, written by
+                  `handleDeliverableRecorded` for readers that predate that table. Rendering both
+                  showed the same description and the same first artifact twice on one page, which
+                  reads as two submissions rather than one — so this block appears only when
+                  `deliverables` holds nothing, which is the case it actually exists for: projects
+                  delivered before migration 0010. The empty check stays too, so a project with
+                  neither does not show "No notes provided" above a full history. */}
+              {!hasDeliverables && (project.delivery_notes || project.delivery_links) && (
                 <div className="bg-[#0f172a] p-5 rounded-2xl border border-slate-800/80 mb-6 text-sm text-slate-300">
                   {project.delivery_notes && (
                     <p className="mb-4"><strong className="text-slate-500 uppercase text-xs tracking-wider block mb-1">Notes:</strong>{project.delivery_notes}</p>

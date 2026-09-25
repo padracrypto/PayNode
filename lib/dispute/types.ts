@@ -387,6 +387,190 @@ export function resolverAvailability(args: {
 }
 
 /* -------------------------------------------------------------------------- */
+/*                         THE THREE RESOLUTION PATHS                         */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * PayNode gives a disputing party three ways out, and which of them are open is a property of
+ * the PROJECT, decided before the dispute existed:
+ *
+ *   PATH 1  `resolveDispute`                        a human arbitrator named at creation
+ *   PATH 2  `resolveDisputeWithAttestation`         the autonomous resolver, signed by the
+ *                                                   key for the project's resolver epoch
+ *   PATH 3  `proposeSettlement`/`acceptSettlement`  a 2-of-2 split between the parties
+ *
+ * PATHS 1 and 2 are MUTUALLY EXCLUSIVE. `resolveDispute` admits only `projectArbitrator`, and
+ * `preflight()` in lib/resolver/evidence.ts refuses PATH 2 whenever that address is set. Exactly
+ * one adjudicator governs any project and which one was fixed when the client funded. PATH 3 is
+ * open at every funded status including Disputed, so it is the one route that never depends on
+ * a third party.
+ *
+ * PATH 4, `forceResolveStaleDispute`, is deliberately NOT in this list. It is not a way to
+ * resolve a dispute; it is the guarantee that no reachable state holds funds forever. It takes
+ * 30 days and its outcome is fixed by the contract rather than chosen by anyone. Presenting it
+ * as a fourth option would offer "wait a month and accept whatever the contract decides" as a
+ * peer of three real choices. Every surface quotes it separately, as a deadline, from
+ * `DISPUTE_WINDOWS.staleDays`.
+ *
+ * WHY THIS LIVES HERE. The warning modal, the dispute panel and the project page each have to
+ * tell a party the same thing about the same project, and each carried its own
+ * `hasArbitrator ? … : hasResolver ? … : …` ladder in prose. Three ladders is three chances for
+ * one screen to promise a route another screen says is closed. One function, three renderers.
+ */
+
+export type ResolutionPathId = 'arbitrator' | 'resolver' | 'settlement';
+
+export type ResolutionPathInfo = {
+  id: ResolutionPathId;
+  /**
+   * The contract's own numbering, so a party can read this against PayNodeEscrowV2.sol.
+   *
+   * That NatSpec numbers the paths from 1 (`PATH 1 — the project's designated arbitrator…`).
+   * `ResolutionPath` in lib/paynode.ts is the SAME list zero-indexed, because it mirrors the
+   * `DisputeResolved` event field the indexer stores. Quoting the NatSpec numbers here is
+   * deliberate: it is what a reader comparing the UI with the source sees. Do not renumber one
+   * without the other, and note that this type is not that enum — hence `…Info`.
+   */
+  pathNumber: 1 | 2 | 3;
+  title: string;
+  /** The contract function behind it. A footnote for a party who wants to verify, not decoration. */
+  onchain: string;
+  /** What the route does, in one sentence, true whether or not it is open. */
+  summary: string;
+  /** Rendered monospace beside the title: the arbitrator's label, the signing epoch. */
+  subject?: string;
+  available: boolean;
+  /**
+   * Why it is closed. Set iff `available` is false — a closed path is still listed, because a
+   * party who simply cannot see PATH 2 has no way to tell whether it is off for this project or
+   * the app failed to offer it.
+   */
+  closedBecause?: string;
+  /** The three facts that decide which route a party takes. Present iff `available`. */
+  facts?: {
+    /** Who can start it. */
+    starts: string;
+    /** How long it takes, in the terms a party cares about. */
+    speed: string;
+    /** What binds the outcome, and whether it can be undone. */
+    binding: string;
+  };
+};
+
+/**
+ * Describe the routes out of a dispute for ONE project, open ones first.
+ *
+ * Every field is derived from chain reads the caller already holds — `projectArbitrator` for
+ * PATH 1, `resolverFor(projectId)` for PATH 2 — so nothing here can advertise a capability the
+ * contract would refuse. The one thing it cannot know is whether the deployed resolver service
+ * still holds the key for this project's epoch: that is the server-side fourth gate documented
+ * on `resolverAvailability` above. A non-zero `resolverFor` proves a key exists for the epoch,
+ * which is what `available` claims and no more.
+ */
+export function resolutionPaths(args: {
+  hasArbitrator: boolean;
+  hasResolver: boolean;
+  /** `@username` or a shortened address. Presentational; never used for a decision. */
+  arbitratorLabel?: string;
+  /** `onchain.resolverEpoch` — the resolver generation snapshotted when the client funded. */
+  resolverEpoch?: number;
+}): ResolutionPathInfo[] {
+  const { hasArbitrator, hasResolver, arbitratorLabel, resolverEpoch } = args;
+
+  const arbitrator: ResolutionPathInfo = {
+    id: 'arbitrator',
+    pathNumber: 1,
+    title: 'Named human arbitrator',
+    onchain: 'resolveDispute',
+    subject: hasArbitrator ? arbitratorLabel : undefined,
+    summary:
+      'A third-party wallet, named when the project was created, reads the case and rules: ' +
+      'release to the builder, refund the client, or any split between the two.',
+    available: hasArbitrator,
+    closedBecause: hasArbitrator
+      ? undefined
+      : 'No arbitrator wallet was specified when this project was created, and one cannot be ' +
+        'added afterwards.',
+    facts: hasArbitrator
+      ? {
+          starts: 'Only the arbitrator. Neither party can trigger a ruling or hurry one along.',
+          speed: 'Whenever they rule — this path has no deadline of its own.',
+          binding: 'Pays out the moment they submit it. It cannot be revised or appealed.',
+        }
+      : undefined,
+  };
+
+  const resolver: ResolutionPathInfo = {
+    id: 'resolver',
+    pathNumber: 2,
+    title: 'Automatic AI arbitrator',
+    onchain: 'resolveDisputeWithAttestation',
+    // Only on the OPEN path. On a project with a named arbitrator `resolverFor` still returns a
+    // key — the epoch exists, it just cannot be used here — and printing "signing epoch 1" under
+    // a card badged "Not available" reads as a contradiction.
+    subject:
+      !hasArbitrator && hasResolver && resolverEpoch !== undefined
+        ? `signing epoch ${resolverEpoch}`
+        : undefined,
+    summary:
+      'PayNode’s resolver reads the brief, every deliverable on record, the verified blockchain ' +
+      'timeline and both parties’ statements, then divides the escrow — anywhere from 0% to ' +
+      '100% to the builder.',
+    available: !hasArbitrator && hasResolver,
+    closedBecause: hasArbitrator
+      ? 'This project named its own arbitrator, who rules instead. A project has exactly one ' +
+        'adjudicator, and the two are mutually exclusive.'
+      : hasResolver
+        ? undefined
+        : 'Automatic resolution was not enabled for this project, so no key exists to sign a ' +
+          'ruling with.',
+    facts:
+      !hasArbitrator && hasResolver
+        ? {
+            starts: 'Either party, once both have had a fair chance to file their evidence.',
+            speed: 'Rules in about a minute. The signed ruling is then relayed on-chain.',
+            binding:
+              'Binding and final: one ruling per project, enforced by the contract, with no ' +
+              'appeal and no second pass.',
+          }
+        : undefined,
+  };
+
+  /**
+   * Always open while there is an escrow at all. `proposeSettlement` accepts every funded
+   * status, Disputed included, and its own comment in the contract says why: so the parties can
+   * always settle between themselves without waiting on an arbitrator, a resolver or the
+   * timeout.
+   */
+  const settlement: ResolutionPathInfo = {
+    id: 'settlement',
+    pathNumber: 3,
+    title: 'Mutual settlement',
+    onchain: 'proposeSettlement / acceptSettlement',
+    summary:
+      'One of you proposes a percentage split and the other accepts it on-chain. No arbitrator, ' +
+      'no AI, no waiting period — the escrow pays out on the second signature.',
+    available: true,
+    facts: {
+      starts: 'Either party, at any time, including while another path is already under way.',
+      speed: 'Immediate. It settles in the block the offer is accepted in.',
+      binding:
+        'Needs both of you. An offer binds nobody until it is accepted and can be withdrawn ' +
+        'until then; accepting pays out at exactly the split shown.',
+    },
+  };
+
+  // The adjudicator that actually governs this project leads, because it answers "who decides
+  // if we cannot agree". Mutual settlement follows, since it is always open. The excluded
+  // adjudicator comes last, present only so that its absence is explained rather than silent.
+  const ordered: ResolutionPathInfo[] = hasArbitrator
+    ? [arbitrator, settlement, resolver]
+    : [resolver, settlement, arbitrator];
+
+  return [...ordered.filter((p) => p.available), ...ordered.filter((p) => !p.available)];
+}
+
+/* -------------------------------------------------------------------------- */
 /*                          WINDOWS QUOTED IN THE UI                          */
 /* -------------------------------------------------------------------------- */
 

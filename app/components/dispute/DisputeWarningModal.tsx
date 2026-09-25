@@ -29,11 +29,20 @@
  * lib/resolver/arbitrate.ts, in the order that prompt weighs things. If that standard is
  * revised, revise this — a party who was shown a different standard than the one applied has a
  * fair complaint, and it is the kind of drift nothing else in the build would catch.
+ *
+ * ── WHICH ROUTES OUT EXIST ───────────────────────────────────────────────────
+ * The routes come from `resolutionPaths()` rather than from a prose ladder in here, so this
+ * dialog cannot promise a path the Disputed screen then refuses. It shows all three, closed ones
+ * included and clearly marked: the decision a party is making is "is a dispute my best move",
+ * and that depends on knowing they can still settle bilaterally in one transaction whatever the
+ * adjudicator situation is. The rubric and the binding warning below then follow whichever
+ * adjudicator actually governs this project.
  */
 
 import * as React from 'react';
-import { DISPUTE_WINDOWS, bpsToPercent } from '@/lib/dispute/types';
+import { DISPUTE_WINDOWS, bpsToPercent, resolutionPaths } from '@/lib/dispute/types';
 import type { ViewerRole } from '@/lib/dispute/types';
+import { ResolutionPaths } from './ResolutionPaths';
 import { Alert, Button, LinkButton } from './ui';
 
 export function DisputeWarningModal({
@@ -44,6 +53,7 @@ export function DisputeWarningModal({
   hasArbitrator,
   arbitratorLabel,
   hasResolver,
+  resolverEpoch,
   busy,
   onConfirm,
   onCancel,
@@ -54,6 +64,8 @@ export function DisputeWarningModal({
   hasArbitrator: boolean;
   arbitratorLabel?: string;
   hasResolver: boolean;
+  /** `onchain.resolverEpoch` — quoted so a party can see which signing key governs them. */
+  resolverEpoch?: number;
   busy: boolean;
   onConfirm: () => void;
   onCancel: () => void;
@@ -88,6 +100,13 @@ export function DisputeWarningModal({
   const staleOutcome = delivered
     ? `split ${bpsToPercent(DISPUTE_WINDOWS.staleBuilderBps)}/${bpsToPercent(10_000 - DISPUTE_WINDOWS.staleBuilderBps)} between both parties`
     : 'refunded in full to the client, because the work was never marked delivered';
+
+  // One source for the routes, shared with the Disputed screen this dialog leads to. The two
+  // booleans below are read off the result rather than re-tested here, so "the rubric is shown"
+  // and "the AI path is open" can never disagree.
+  const paths = resolutionPaths({ hasArbitrator, hasResolver, arbitratorLabel, resolverEpoch });
+  const resolverOpen = paths.some((p) => p.id === 'resolver' && p.available);
+  const arbitratorOpen = paths.some((p) => p.id === 'arbitrator' && p.available);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -136,38 +155,31 @@ export function DisputeWarningModal({
             locked in the contract until it is resolved.
           </Alert>
 
-          {/* ---- 2. Who decides ---- */}
-          <Section title="Who decides the outcome">
-            {hasArbitrator ? (
-              <p>
-                This project named a designated arbitrator
-                {arbitratorLabel ? (
-                  <>
-                    {' '}
-                    — <span className="font-mono text-slate-300">{arbitratorLabel}</span>
-                  </>
-                ) : null}
-                . They rule on it, and their ruling pays out immediately and cannot be revised.
-                Automatic resolution is not available for this project.
-              </p>
-            ) : hasResolver ? (
-              <p>
-                No arbitrator was named, so this project resolves through PayNode&apos;s automatic
-                arbitrator. Either of you can also settle directly with the other party at any
-                time, which needs no third party and ends the dispute at once.
-              </p>
-            ) : (
-              <p>
-                No arbitrator was named and automatic resolution was not enabled when this project
-                was funded. That leaves two routes: settle directly with the other party, or wait
-                out the {DISPUTE_WINDOWS.staleDays}-day timeout.
-              </p>
-            )}
-          </Section>
+          {/* ---- 2. Who decides: the three routes, for THIS project ----
+                 Not wrapped in <Section />, unlike its neighbours: a Section's surface is the
+                 same `#050B14` the path cards use, so nesting them would leave the cards
+                 indistinguishable from their own container. The label and spacing are Section's;
+                 only the surface is dropped. */}
+          <div>
+            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
+              How a dispute on this project ends
+            </p>
+            <p className="text-sm text-slate-400 leading-relaxed mb-4">
+              PayNode has three resolution paths. Which of them are open was fixed when this
+              project was created and funded — they are listed here as they stand for this project,
+              and a closed one cannot be opened later.
+            </p>
+            <ResolutionPaths paths={paths} />
+            <p className="text-sm text-slate-500 leading-relaxed mt-4">
+              None of the three has to be used. If nobody resolves it, the{' '}
+              {DISPUTE_WINDOWS.staleDays}-day backstop below settles it on terms neither of you
+              chooses.
+            </p>
+          </div>
 
           {/* ---- 3. The standard that will be applied ---- */}
-          {!hasArbitrator && hasResolver && (
-            <Section title="How the automatic arbitrator rules">
+          {resolverOpen && (
+            <Section title="How the automatic AI arbitrator rules">
               <p className="mb-3">
                 It reads the brief, every deliverable on record, the blockchain timeline and both
                 parties&apos; statements, then outputs a single number: the builder&apos;s share of
@@ -210,13 +222,25 @@ export function DisputeWarningModal({
             </Section>
           )}
 
-          {/* ---- 4. Binding ---- */}
-          {!hasArbitrator && hasResolver && (
+          {/* ---- 4. Binding. Stated for whichever adjudicator governs — an arbitrator's ruling
+                 is every bit as final as the resolver's, and the previous copy only warned about
+                 the automatic one. A mutual settlement needs no such warning: it cannot happen
+                 without this party's own signature. ---- */}
+          {resolverOpen && (
             <Alert tone="danger" label="Binding and final">
               The ruling is enforced by the smart contract. There is no appeal, no human review
               and no second pass — whatever split it reaches is what gets paid out. Once a ruling
               is issued it cannot be re-requested for a better number: the first one is stored
               permanently and every later request returns that same result.
+            </Alert>
+          )}
+
+          {arbitratorOpen && (
+            <Alert tone="danger" label="Binding and final">
+              The arbitrator&apos;s ruling is enforced by the smart contract. It pays out the
+              moment they submit it, there is no appeal and no second ruling, and neither of you
+              can set a deadline for them. The one thing you both keep is the ability to settle
+              between yourselves before they act.
             </Alert>
           )}
 
