@@ -394,9 +394,10 @@ function ProjectForm() {
                   !useArbitrator ? 'border-blue-500/50 bg-blue-950/20' : 'border-slate-700/50 bg-[#050B14] hover:border-slate-600'
                 }`}
               >
-                <p className="text-white font-bold text-sm mb-1">Automatic</p>
+                <p className="text-white font-bold text-sm mb-1">Automatic (AI Resolver)</p>
                 <p className="text-slate-400 text-xs">
-                  Resolved by PayNode&apos;s resolver, or by mutual agreement between you and the builder.
+                  Binding resolution by PayNode&apos;s autonomous AI agent (Gemini), with the option
+                  for direct mutual settlement at any time.
                 </p>
               </button>
 
@@ -433,8 +434,10 @@ function ProjectForm() {
             {/* These are terms of the agreement. Users should read them before signing, not
                 discover them on day 30. */}
             <p className="text-xs text-slate-500 leading-relaxed">
-              If a dispute goes unresolved for 30 days, anyone can settle it: funds split 50/50 if
-              work was delivered, or return to you in full if it never was.
+              Either way, you and the builder keep the right to settle directly by mutual agreement
+              at any point before the AI resolver or your named arbitrator rules. If a dispute goes
+              unresolved for 30 days, anyone can settle it: funds split 50/50 if work was delivered,
+              or return to you in full if it never was.
             </p>
           </div>
 
