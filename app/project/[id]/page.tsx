@@ -32,6 +32,9 @@ import {
   type OnChainProject,
 } from '@/lib/paynode';
 import { useSiwe } from '@/app/providers/SiweProvider';
+import { DisputePanel } from '@/app/components/dispute/DisputePanel';
+import { DisputeWarningModal } from '@/app/components/dispute/DisputeWarningModal';
+import type { DeliverableRow, ViewerRole } from '@/lib/dispute/types';
 
 const PATH_LABEL: Record<number, string> = {
   [ResolutionPath.DesignatedArbitrator]: 'the designated arbitrator',
@@ -98,7 +101,8 @@ export default function ProjectPage() {
   const [builderUsername, setBuilderUsername] = useState<string>('');
   const [arbitratorUsername, setArbitratorUsername] = useState<string>('');
 
-  const [deliveryData, setDeliveryData] = useState({ notes: '', links: '' });
+  // `deliveryData` used to back the two-field Deliver Work card. <DeliverableForm /> owns its
+  // own fields now, so nothing on this page holds delivery input any more.
   const [isRevisionMode, setIsRevisionMode] = useState(false);
   const [revisionNote, setRevisionNote] = useState('');
   const [loading, setLoading] = useState(false);
@@ -109,6 +113,11 @@ export default function ProjectPage() {
   const [showRatingModal, setShowRatingModal] = useState(false);
   const [selectedRating, setSelectedRating] = useState<number>(5);
   const [hoveredRating, setHoveredRating] = useState<number>(0);
+
+  // Replaces the window.confirm() that used to gate raiseDispute. See
+  // app/components/dispute/DisputeWarningModal.tsx for why a native confirm was not adequate
+  // for the one irreversible action in this app.
+  const [showDisputeModal, setShowDisputeModal] = useState(false);
   
   const [activeAction, setActiveAction] = useState<string | null>(null);
   const [banner, setBanner] = useState<{ kind: 'error' | 'info'; text: string } | null>(null);
@@ -272,6 +281,42 @@ export default function ProjectPage() {
   // for that gap — on the one page they were sent here to act on.
   const isUnauthorized =
     !isClient && !isBuilder && !isArbitrator && !!address && !!onchain && arbitratorAddr !== undefined;
+
+  /**
+   * Which party the viewer is, as one value for the dispute panel.
+   *
+   * Derived from the CHAIN in the same order the contract checks: a wallet that is both client
+   * and builder is impossible (`SelfDeal` is rejected at creation), and the arbitrator is
+   * necessarily neither. `observer` is unreachable in practice because RLS denies the project
+   * row to a non-party, but the panel's props are typed for it rather than pretending otherwise.
+   */
+  const viewerRole: ViewerRole = isClient
+    ? 'client'
+    : isBuilder
+      ? 'builder'
+      : isArbitrator
+        ? 'arbitrator'
+        : 'observer';
+
+  /** Display names for the two parties. Falls back to a shortened address. */
+  const clientLabel = clientUsername ? `@${clientUsername}` : short(project?.client);
+  const builderLabel = builderUsername ? `@${builderUsername}` : short(project?.builder);
+
+  /**
+   * Close the dispute warning modal once the transaction it started has resolved either way.
+   *
+   * Kept open through the wallet prompt on purpose — the modal is the only thing on screen
+   * telling the user that something is happening, and closing it on click would leave a blank
+   * page during the signature. It closes when the chain reports Disputed, or when the write
+   * fails, or when the receipt cannot be confirmed. A user rejection lands in `writeError` too,
+   * which is correct: they changed their mind, so the dialog should go away.
+   */
+  useEffect(() => {
+    if (!showDisputeModal) return;
+    if (onchain?.status === ProjectStatus.Disputed || writeError || receiptError) {
+      setShowDisputeModal(false);
+    }
+  }, [showDisputeModal, onchain?.status, writeError, receiptError]);
 
   // The arbitrator's handle is resolved separately from the client's and the builder's,
   // because their address comes from the CHAIN rather than from the row. Looking it up from
@@ -626,48 +671,46 @@ export default function ProjectPage() {
     return send('builderCancel', [pid!], 'Refunded_Builder', 'Refunding client…');
   };
 
-  const deliverWork = async () => {
-    if (!deliveryData.links) { setBanner({ kind: 'error', text: 'Add a link to your deliverable.' }); return; }
-    if (!safeHref(deliveryData.links)) { setBanner({ kind: 'error', text: 'The delivery link must start with http:// or https://.' }); return; }
-
-    // Save the notes and link FIRST. Doing it after the receipt meant a closed tab, a page
-    // refresh or a failed write left the on-chain status at Delivered with nothing for the
-    // client to review. If this fails we stop before the builder spends gas.
-    setLoading(true);
-    setTxStatus('Saving delivery details…');
+  /**
+   * Called by <DeliverableForm /> once the `deliverables` row is committed.
+   *
+   * This replaces `deliverWork()`. The structured submission — title, description and a list of
+   * artifact URLs — now lives in `public.deliverables`, which is what the resolver actually
+   * reads (`gatherCaseFile` selects from that table, not from these columns). The ordering the
+   * old function established is preserved and still matters: evidence first, transaction
+   * second, so a closed tab or a failed write never leaves the chain saying Delivered with
+   * nothing behind it.
+   *
+   * The mirror into `delivery_notes` / `delivery_links` is for backward compatibility only.
+   * Projects delivered before this change render from those columns, and the card below still
+   * shows them; writing the newest submission's description and first artifact keeps that view
+   * correct for new projects without making it the source of truth. A failure here is logged
+   * and swallowed — the authoritative row is already committed, and refusing to send the
+   * transaction over a presentation mirror would be the wrong trade.
+   */
+  const handleDeliverableRecorded = async (row: DeliverableRow) => {
     try {
       await updateProjectFields({
-        delivery_notes: deliveryData.notes,
-        delivery_links: deliveryData.links,
+        delivery_notes: row.description ?? '',
+        delivery_links: row.artifact_urls?.[0] ?? '',
       });
     } catch (err) {
-      console.error('Saving delivery details failed:', err);
-      setLoading(false);
-      setTxStatus('');
-      setBanner({ kind: 'error', text: 'Could not save your delivery notes and link. Nothing was sent on-chain — please try again.' });
-      return;
+      console.error('Mirroring the deliverable into the legacy columns failed:', err);
     }
     return send('markDelivered', [pid!], 'Delivered', 'Recording delivery…');
   };
 
   // ---------------- dispute + settlement (the four resolution paths) ----------------
-  // Opening a dispute freezes the escrow with no undo, so it gets the same confirmation the
-  // cancel and decline actions have. The wording follows the contract: a client can only
-  // dispute delivered work (stale outcome 50/50), while a builder can dispute earlier — and
-  // if that goes stale before delivery, the client is refunded in full.
-  const raiseDispute = () => {
-    const delivered = onchain?.status === ProjectStatus.Delivered;
-    const staleOutcome = delivered
-      ? 'If it is not resolved within 30 days, the funds are split 50/50.'
-      : 'The work has not been delivered, so if it is not resolved within 30 days the client is refunded in full.';
-    const who = hasArbitrator ? 'the designated arbitrator, an agreement between you,' : 'an agreement between you';
-    const ok = window.confirm(
-      `Open a dispute?\n\nThe escrowed funds are frozen until it is resolved by ${who} or the 30-day timeout. ` +
-        `You cannot release or refund the project in the meantime.\n\n${staleOutcome}`,
-    );
-    if (!ok) return;
-    return send('raiseDispute', [pid!], 'Disputed', 'Opening dispute…');
-  };
+  /**
+   * Open a dispute.
+   *
+   * The confirmation moved out of `window.confirm` into <DisputeWarningModal />. A native
+   * confirm could not show the arbitration standard that will be applied, could not require an
+   * explicit acknowledgement, and got the timelock wrong by omission — it mentioned 30 days but
+   * nothing about the fact that the outcome is binding and unappealable once the automatic
+   * resolver rules. This function now just sends the transaction; the modal owns the warning.
+   */
+  const raiseDispute = () => send('raiseDispute', [pid!], 'Disputed', 'Opening dispute…');
 
   // Path 1. Only the designated arbitrator can call this on-chain; the buttons are gated on the
   // same check. The ruling pays out immediately and cannot be revised.
@@ -716,7 +759,25 @@ export default function ProjectPage() {
 
   return (
     <div className="w-full max-w-5xl mx-auto px-6 py-12 space-y-6 relative">
-      
+
+      <DisputeWarningModal
+        open={showDisputeModal}
+        role={viewerRole}
+        delivered={onchain?.status === ProjectStatus.Delivered}
+        hasArbitrator={hasArbitrator}
+        arbitratorLabel={
+          hasArbitrator
+            ? arbitratorUsername
+              ? `@${arbitratorUsername}`
+              : short(arbitratorAddr as string)
+            : undefined
+        }
+        hasResolver={hasResolver}
+        busy={loading && activeAction === 'Disputed'}
+        onConfirm={raiseDispute}
+        onCancel={() => setShowDisputeModal(false)}
+      />
+
       {showRatingModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowRatingModal(false)}></div>
@@ -1064,13 +1125,58 @@ export default function ProjectPage() {
             </div>
           )}
 
-          {/* Escalation entry point. The asymmetry (client may only dispute a delivery,
-              builder may dispute any funded stage) is encoded in deriveActions. */}
-          {act?.canRaiseDispute && (
-            <div className="mt-4 text-center">
-              <button onClick={raiseDispute} disabled={loading}
-                      className="text-slate-500 hover:text-amber-400 text-xs font-bold transition-colors underline decoration-slate-700 underline-offset-4">
-                Something wrong? Open a dispute
+          {/* ============================================================
+              THE DISPUTE-RESOLUTION SURFACE
+
+              Everything off-chain — deliverable submission and history, the
+              evidence record, the request for a ruling, the verdict card and
+              the settlement relay. It also owns the escalation link, because
+              that link now opens <DisputeWarningModal /> rather than a
+              window.confirm, and the modal's state lives up here.
+
+              The four on-chain resolution paths stay in the block above: the
+              page already owns one guarded `send()`, one write hook and the
+              post-transaction sync, and splitting that would give the page two
+              answers to "is a transaction in flight".
+              ============================================================ */}
+          <DisputePanel
+            projectRowId={project?.id != null ? Number(project.id) : undefined}
+            projectId={pid}
+            status={onchain?.status}
+            preDisputeStatus={onchain?.preDispute}
+            totalWei={onchain?.amount}
+            feeBps={onchain?.feeBps}
+            revisionsUsed={onchain?.revisionsUsed ?? 0}
+            chainNow={chainNow}
+            role={viewerRole}
+            wallet={authedWallet ?? undefined}
+            clientLabel={clientLabel}
+            builderLabel={builderLabel}
+            hasArbitrator={hasArbitrator}
+            arbitratorLabel={hasArbitrator ? short(arbitratorAddr as string) : undefined}
+            hasResolver={hasResolver}
+            expectedSigner={resolverAddr as string | undefined}
+            canDeliver={act?.canDeliver ?? false}
+            canRaiseDispute={act?.canRaiseDispute ?? false}
+            txPending={loading}
+            onMarkDelivered={handleDeliverableRecorded}
+            onOpenDisputeModal={() => setShowDisputeModal(true)}
+            guardNetwork={guardNetwork}
+            onChainChanged={() => {
+              void refetchChain();
+              void refetchOffer();
+              void fetchProject();
+            }}
+          />
+
+          {/* The builder's exit, previously buried inside the Deliver Work card that the panel
+              above has replaced. It applies across Funded, InRevision and Delivered, which is
+              wider than that card ever was. */}
+          {act?.canBuilderCancel && onchain?.status !== ProjectStatus.Disputed && (
+            <div className="mt-6 pt-6 border-t border-slate-800/50 text-center">
+              <button onClick={cancelByBuilder} disabled={loading}
+                      className="text-slate-500 hover:text-red-400 text-xs font-bold transition-colors underline decoration-slate-700 underline-offset-4 disabled:opacity-50">
+                Unable to complete? Cancel the contract and refund the client
               </button>
             </div>
           )}
@@ -1154,37 +1260,12 @@ export default function ProjectPage() {
             </div>
           )}
 
-          {act?.canDeliver && (
-            <div className="bg-[#050B14] border border-slate-800/80 p-6 md:p-8 rounded-3xl">
-              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-xl font-black text-white">Deliver Work</h2>
-                <span className="bg-blue-950/30 text-blue-400 px-3 py-1 rounded-lg text-xs font-bold border border-blue-900/50 flex items-center gap-2">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3"><path fillRule="evenodd" d="M10 1a4.5 4.5 0 0 0-4.5 4.5V9H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-.5V5.5A4.5 4.5 0 0 0 10 1Zm3 8V5.5a3 3 0 1 0-6 0V9h6Z" clipRule="evenodd" /></svg>
-                  Escrow Secured
-                </span>
-              </div>
-              <textarea 
-                className="w-full bg-[#0f172a] p-4 rounded-xl border border-slate-700/50 text-white text-sm mb-4 outline-none focus:border-purple-500/50 focus:ring-1 focus:ring-purple-500/50 transition-all resize-none" 
-                placeholder="What did you complete? (Notes)" 
-                rows={3}
-                onChange={e => setDeliveryData({...deliveryData, notes: e.target.value})} 
-              />
-              <input 
-                className="w-full bg-[#0f172a] p-4 rounded-xl border border-slate-700/50 text-white text-sm mb-6 outline-none focus:border-purple-500/50 focus:ring-1 focus:ring-purple-500/50 transition-all" 
-                placeholder="https://github.com/..." 
-                onChange={e => setDeliveryData({...deliveryData, links: e.target.value})} 
-              />
-              <button onClick={deliverWork} disabled={loading} className="w-full bg-purple-600 hover:bg-purple-500 text-white py-4 rounded-xl font-bold transition-all shadow-[0_0_20px_-5px_rgba(168,85,247,0.4)] mb-6">
-                {loading && txStatus === 'Recording Delivery on Blockchain...' ? txStatus : 'Submit Delivery'}
-              </button>
-              
-              <div className="border-t border-slate-800 pt-6 text-center">
-                 <button onClick={cancelByBuilder} disabled={loading} className="text-slate-500 hover:text-red-400 text-xs font-bold transition-colors underline decoration-slate-700 underline-offset-4">
-                   Unable to complete? Cancel Contract & Refund Client
-                 </button>
-              </div>
-            </div>
-          )}
+          {/* The Deliver Work card that stood here has been replaced by <DeliverableForm />,
+              rendered from <DisputePanel /> above. It took one notes field and one link; the
+              resolver reads a structured submission with a title, a description and a list of
+              artifacts out of `public.deliverables`, and the builder needs a history rather than
+              a single overwritable pair of columns. The builder's cancel link moved up with the
+              panel, where it now covers every stage the contract permits it in. */}
 
           {deliveryOnRecord && (
             <div className={`bg-[#050B14] border ${deliveredCard.border} p-6 md:p-8 rounded-3xl`}>
@@ -1193,15 +1274,25 @@ export default function ProjectPage() {
                 {deliveredCard.title}
               </h2>
 
-              <div className="bg-[#0f172a] p-5 rounded-2xl border border-slate-800/80 mb-6 text-sm text-slate-300">
-                <p className="mb-4"><strong className="text-slate-500 uppercase text-xs tracking-wider block mb-1">Notes:</strong>{project.delivery_notes || <span className="text-slate-500 italic">No notes provided.</span>}</p>
-                <p><strong className="text-slate-500 uppercase text-xs tracking-wider block mb-1">Link:</strong>{safeHref(project.delivery_links)
-                  ? <a href={safeHref(project.delivery_links)!} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 hover:underline break-all">{project.delivery_links}</a>
-                  : project.delivery_links
-                    ? <span className="break-all">{project.delivery_links}</span>
-                    : <span className="text-slate-500 italic">No link recorded.</span>}</p>
-              </div>
-              
+              {/* The legacy single-delivery fields, rendered only when they hold something.
+                  The structured submission history in <DisputePanel /> above is the real record
+                  now; these columns are a mirror of the newest submission, and for projects
+                  delivered before that table existed they are the ONLY record. Hiding the block
+                  when both are empty keeps a new project from showing "No notes provided"
+                  directly above a full history. */}
+              {(project.delivery_notes || project.delivery_links) && (
+                <div className="bg-[#0f172a] p-5 rounded-2xl border border-slate-800/80 mb-6 text-sm text-slate-300">
+                  {project.delivery_notes && (
+                    <p className="mb-4"><strong className="text-slate-500 uppercase text-xs tracking-wider block mb-1">Notes:</strong>{project.delivery_notes}</p>
+                  )}
+                  {project.delivery_links && (
+                    <p><strong className="text-slate-500 uppercase text-xs tracking-wider block mb-1">Link:</strong>{safeHref(project.delivery_links)
+                      ? <a href={safeHref(project.delivery_links)!} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 hover:underline break-all">{project.delivery_links}</a>
+                      : <span className="break-all">{project.delivery_links}</span>}</p>
+                  )}
+                </div>
+              )}
+
               {isClient && onchain?.status === ProjectStatus.Delivered && !isRevisionMode && (
                  <div className="flex flex-col sm:flex-row gap-4 mt-6 border-t border-slate-800 pt-6">
                    <button 
