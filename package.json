@@ -11,9 +11,12 @@
     "indexer": "tsx indexer/worker.mjs",
     "indexer:once": "tsx indexer/worker.mjs --once",
     "check:arc": "tsx scripts/check-arc-decimals.ts",
+    "check:resolver": "tsx --env-file=.env.local scripts/check-resolver.ts",
+    "test:arbitration": "tsx --conditions=react-server --env-file=.env.local scripts/test-arbitration.mts",
     "check:env": "node scripts/check-env.mjs"
   },
   "dependencies": {
+    "@google/genai": "^2.24.0",
     "@rainbow-me/rainbowkit": "^2.0.0",
     "@supabase/supabase-js": "^2.39.0",
     "@tailwindcss/postcss": "^4.3.3",
