@@ -35,7 +35,6 @@ import { useSiwe } from '@/app/providers/SiweProvider';
 import { DisputePanel } from '@/app/components/dispute/DisputePanel';
 import { DisputeWarningModal } from '@/app/components/dispute/DisputeWarningModal';
 import { ResolutionPaths } from '@/app/components/dispute/ResolutionPaths';
-import { useHasDeliverables } from '@/lib/dispute/hooks';
 import { resolutionPaths } from '@/lib/dispute/types';
 import type { DeliverableRow, ViewerRole } from '@/lib/dispute/types';
 
@@ -79,20 +78,6 @@ function AccessDenied({ signedIn }: { signedIn: boolean }) {
     </div>
   );
 }
-
-/**
- * The delivery link is typed by the builder and rendered as an <a href> for the client, so a
- * `javascript:` URL would run in this origin on click. Only http(s) is allowed through.
- */
-const safeHref = (url?: string | null): string | null => {
-  if (!url) return null;
-  try {
-    const u = new URL(url);
-    return u.protocol === 'http:' || u.protocol === 'https:' ? u.toString() : null;
-  } catch {
-    return null;
-  }
-};
 
 export default function ProjectPage() {
   const { id } = useParams();
@@ -255,19 +240,6 @@ export default function ProjectPage() {
     ((onchain?.status === ProjectStatus.Disputed || onchain?.status === ProjectStatus.Refunded) &&
       onchain.preDispute === ProjectStatus.Delivered);
 
-  /**
-   * Whether `public.deliverables` holds anything for this project.
-   *
-   * Gates the legacy notes/link block below. `delivery_notes` and `delivery_links` are written
-   * by `handleDeliverableRecorded` as a mirror of the newest submission, so once a structured
-   * row exists the block restates the same description and the same first artifact that the
-   * submission record above already shows — the same content rendered twice, in two cards, with
-   * nothing to tell a reader that it is one submission rather than two. The columns stay as the
-   * only record for projects delivered before that table existed, which is exactly the case this
-   * flag distinguishes.
-   */
-  const hasDeliverables = useHasDeliverables(project?.id != null ? Number(project.id) : undefined);
-
   const deliveredCard =
     onchain?.status === ProjectStatus.Completed
       ? { border: 'border-emerald-900/30', text: 'text-emerald-400', title: 'Delivered Work (Approved)' }
@@ -410,36 +382,44 @@ export default function ProjectPage() {
     return () => clearInterval(timer);
   }, [project?.deadline]);
 
+  // Counts down to the contract's own review deadline: `stateTimestamp` (deliveredAt, unix
+  // SECONDS, bigint) + REVIEW_PERIOD, as computed in deriveActions. This used to read Supabase's
+  // `delivered_at` and require its `status` string to be 'Delivered' — when the row lagged the
+  // chain or the column was empty the effect never ran, and the button sat on "Calculating..."
+  // forever. Anchored to chain time so it agrees with `canClaimByBuilder`.
+  const reviewEndsAt = act?.reviewEndsAt ?? 0n;
   useEffect(() => {
-    if (!project?.delivered_at || project.status !== 'Delivered') return;
+    if (reviewEndsAt === 0n) {
+      setForceReleaseTimeLeft('');
+      return;
+    }
 
-    const releaseTimer = setInterval(() => {
-      const now = new Date().getTime();
-      const deliveredDate = new Date(project.delivered_at).getTime();
-      const releaseTime = deliveredDate + (7 * 24 * 60 * 60 * 1000); 
-      const distance = releaseTime - now;
-
-      if (distance < 0) {
+    // Offset between chain time and the local clock, so ticking between blocks stays aligned.
+    const skew = Number(chainNow) - Math.floor(Date.now() / 1000);
+    const tick = () => {
+      const distance = Number(reviewEndsAt) - (Math.floor(Date.now() / 1000) + skew);
+      if (distance <= 0) {
         setForceReleaseTimeLeft('Claim Now');
-        clearInterval(releaseTimer);
         return;
       }
 
-      const days = Math.floor(distance / (1000 * 60 * 60 * 24));
-      const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-      const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+      const days = Math.floor(distance / 86_400);
+      const hours = Math.floor((distance % 86_400) / 3_600);
+      const minutes = Math.floor((distance % 3_600) / 60);
 
       if (days > 0) {
-        setForceReleaseTimeLeft(`Available in ${days}d ${hours}h`);
+        setForceReleaseTimeLeft(`${days}d ${hours}h`);
       } else if (hours > 0) {
-        setForceReleaseTimeLeft(`Available in ${hours}h ${minutes}m`);
+        setForceReleaseTimeLeft(`${hours}h ${minutes}m`);
       } else {
-        setForceReleaseTimeLeft(`Available in ${minutes}m`);
+        setForceReleaseTimeLeft(`${Math.max(minutes, 1)}m`);
       }
-    }, 1000);
+    };
 
+    tick();
+    const releaseTimer = setInterval(tick, 1000);
     return () => clearInterval(releaseTimer);
-  }, [project?.delivered_at, project?.status]);
+  }, [reviewEndsAt, chainNow]);
 
   useEffect(() => {
     if (isMined && receipt?.status === 'reverted') {
@@ -1333,27 +1313,8 @@ export default function ProjectPage() {
                 {deliveredCard.title}
               </h2>
 
-              {/* The legacy single-delivery fields — a FALLBACK, not a second view.
-                  The structured submission record in <DisputePanel /> above is the real record
-                  now; these columns are only a mirror of the newest submission, written by
-                  `handleDeliverableRecorded` for readers that predate that table. Rendering both
-                  showed the same description and the same first artifact twice on one page, which
-                  reads as two submissions rather than one — so this block appears only when
-                  `deliverables` holds nothing, which is the case it actually exists for: projects
-                  delivered before migration 0010. The empty check stays too, so a project with
-                  neither does not show "No notes provided" above a full history. */}
-              {!hasDeliverables && (project.delivery_notes || project.delivery_links) && (
-                <div className="bg-[#0f172a] p-5 rounded-2xl border border-slate-800/80 mb-6 text-sm text-slate-300">
-                  {project.delivery_notes && (
-                    <p className="mb-4"><strong className="text-slate-500 uppercase text-xs tracking-wider block mb-1">Notes:</strong>{project.delivery_notes}</p>
-                  )}
-                  {project.delivery_links && (
-                    <p><strong className="text-slate-500 uppercase text-xs tracking-wider block mb-1">Link:</strong>{safeHref(project.delivery_links)
-                      ? <a href={safeHref(project.delivery_links)!} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 hover:underline break-all">{project.delivery_links}</a>
-                      : <span className="break-all">{project.delivery_links}</span>}</p>
-                  )}
-                </div>
-              )}
+              {/* The legacy Notes/Link fields were removed from this card: the submission record
+                  in <DisputePanel /> above is the single place the delivered work is shown. */}
 
               {isClient && onchain?.status === ProjectStatus.Delivered && !isRevisionMode && (
                  <div className="flex flex-col sm:flex-row gap-4 mt-6 border-t border-slate-800 pt-6">
@@ -1405,7 +1366,13 @@ export default function ProjectPage() {
                     disabled={!(act?.canClaimByBuilder ?? false) || loading} 
                     className={`w-full py-3 rounded-xl font-bold transition-all text-sm ${(act?.canClaimByBuilder ?? false) ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-[0_0_15px_rgba(16,185,129,0.3)]' : 'bg-[#0f172a] border border-slate-800 text-slate-500 cursor-not-allowed'}`}
                   >
-                    {loading && txStatus === 'Claiming Funds...' ? txStatus : ((act?.canClaimByBuilder ?? false) ? 'Force Release (Claim Now)' : `Force Release (${forceReleaseTimeLeft || 'Calculating...'})`)}
+                    {loading && txStatus === 'Claiming Funds...'
+                      ? txStatus
+                      : (act?.canClaimByBuilder ?? false) || forceReleaseTimeLeft === 'Claim Now'
+                        ? 'Force Release (Claim Now)'
+                        : forceReleaseTimeLeft
+                          ? `Force Release in ${forceReleaseTimeLeft}`
+                          : 'Force Release (Calculating...)'}
                   </button>
                 </div>
               )}
