@@ -37,6 +37,7 @@ import { DisputeWarningModal } from '@/app/components/dispute/DisputeWarningModa
 import { ResolutionPaths } from '@/app/components/dispute/ResolutionPaths';
 import { resolutionPaths } from '@/lib/dispute/types';
 import type { DeliverableRow, ViewerRole } from '@/lib/dispute/types';
+import { submitRating } from '@/app/actions/rating';
 
 const PATH_LABEL: Record<number, string> = {
   [ResolutionPath.DesignatedArbitrator]: 'the designated arbitrator',
@@ -46,6 +47,18 @@ const PATH_LABEL: Record<number, string> = {
 };
 
 const short = (a?: string) => (a ? `${a.slice(0, 6)}…${a.slice(-4)}` : '');
+
+const STAR_PATH =
+  'M10.788 3.21c.448-1.077 1.976-1.077 2.424 0l2.082 5.006 5.404.434c1.164.093 1.636 1.545.749 2.305l-4.117 3.527 1.257 5.273c.271 1.136-.964 2.033-1.96 1.425L12 18.354 7.373 21.18c-.996.608-2.231-.29-1.96-1.425l1.257-5.273-4.117-3.527c-.887-.76-.415-2.212.749-2.305l5.404-.434 2.082-5.005Z';
+
+function Star({ filled }: { filled: boolean }) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"
+         className={`w-4 h-4 transition-colors ${filled ? 'text-yellow-400' : 'text-slate-700'}`}>
+      <path fillRule="evenodd" d={STAR_PATH} clipRule="evenodd" />
+    </svg>
+  );
+}
 
 /**
  * Shown when the project row cannot be read. Row-level security only lets the client, the
@@ -98,9 +111,15 @@ export default function ProjectPage() {
   const [timeLeft, setTimeLeft] = useState<string>('');
   const [forceReleaseTimeLeft, setForceReleaseTimeLeft] = useState<string>('');
   
-  const [showRatingModal, setShowRatingModal] = useState(false);
-  const [selectedRating, setSelectedRating] = useState<number>(5);
-  const [hoveredRating, setHoveredRating] = useState<number>(0);
+  const [showReleaseModal, setShowReleaseModal] = useState(false);
+
+  // The client's one-time rating of the builder (public.ratings, migration 0011). `undefined`
+  // until the read returns, so the rate control never flashes up for an already-rated project.
+  const [rating, setRating] = useState<number | null | undefined>(undefined);
+  const [pickedScore, setPickedScore] = useState(0);
+  const [hoveredScore, setHoveredScore] = useState(0);
+  const [ratingBusy, setRatingBusy] = useState(false);
+  const [ratingError, setRatingError] = useState('');
 
   // Replaces the window.confirm() that used to gate raiseDispute. See
   // app/components/dispute/DisputeWarningModal.tsx for why a native confirm was not adequate
@@ -515,6 +534,13 @@ export default function ProjectPage() {
       setNotFound(false);
       setProject(data);
 
+      const { data: ratingRow } = await supabase
+        .from('ratings')
+        .select('score')
+        .eq('project_id', data.id)
+        .maybeSingle();
+      setRating(ratingRow?.score ?? null);
+
       const { data: profiles } = await supabase
         .from('profiles')
         .select('wallet_address, username')
@@ -576,7 +602,8 @@ export default function ProjectPage() {
    * from confirmed chain events. That is what makes it impossible for a session to mark
    * someone else's project Completed and hide their release button.
    *
-   * What remains here is presentation only: notes, links, and the client's rating.
+   * What remains here is presentation only: notes and links. The client's rating is not written
+   * here any more — it is given once the project concludes, through submitRating().
    */
   const handleDbSyncAfterWeb3 = async () => {
     setTxStatus('Saving…');
@@ -588,7 +615,6 @@ export default function ProjectPage() {
             `Work delivered for "${project.title}". Please review it.`, 'WORK_DELIVERED');
           break;
         case 'Completed':
-          await updateProjectFields({ rating: selectedRating });
           await sendNotification(project.builder,
             `Funds released! Your work on "${project.title}" was approved.`, 'PROJECT_FUNDED');
           break;
@@ -657,7 +683,7 @@ export default function ProjectPage() {
     send('fundProject', [pid!], 'Funded', 'Confirm in your wallet…', onchain?.amount);
 
   const executeReleaseFunds = () => {
-    setShowRatingModal(false);
+    setShowReleaseModal(false);
     return send('releaseFunds', [pid!], 'Completed', 'Releasing funds…');
   };
 
@@ -759,6 +785,26 @@ export default function ProjectPage() {
   const forceResolve = () =>
     send('forceResolveStaleDispute', [pid!], 'ForceResolved', 'Settling dispute…');
 
+  // Gated on the CHAIN, like every other control here. submitRating() also accepts a chain
+  // status the indexer has not caught up with yet, so the page and the action agree.
+  const concluded =
+    onchain?.status === ProjectStatus.Completed || onchain?.status === ProjectStatus.Refunded;
+  const canRate = isClient && concluded && rating === null;
+
+  const saveRating = async () => {
+    if (!pickedScore || ratingBusy) return;
+    setRatingBusy(true);
+    setRatingError('');
+    try {
+      const res = await submitRating(Number(project.id), pickedScore);
+      if (res.ok) setRating(res.score);
+      else setRatingError(res.message);
+    } catch {
+      setRatingError('Could not save your rating. Try again shortly.');
+    }
+    setRatingBusy(false);
+  };
+
 
   if (!project) {
     if (notFound) return <AccessDenied signedIn={!!authedWallet} />;
@@ -787,48 +833,23 @@ export default function ProjectPage() {
         onCancel={() => setShowDisputeModal(false)}
       />
 
-      {showRatingModal && (
+      {showReleaseModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowRatingModal(false)}></div>
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowReleaseModal(false)}></div>
           <div className="bg-[#0f172a] border border-slate-800 rounded-3xl p-8 max-w-md w-full relative z-10 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
             <div className="text-center mb-6">
               <div className="w-16 h-16 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-8 h-8 text-emerald-400">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M11.48 3.499a.562.562 0 0 1 1.04 0l2.125 5.111a.563.563 0 0 0 .475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 0 0-.182.557l1.285 5.385a.562.562 0 0 1-.84.61l-4.725-2.885a.562.562 0 0 0-.586 0L6.982 20.54a.562.562 0 0 1-.84-.61l1.285-5.386a.562.562 0 0 0-.182-.557l-4.204-3.602a.562.562 0 0 1 .321-.988l5.518-.442a.563.563 0 0 0 .475-.345L11.48 3.5Z" />
-                </svg>
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-8 h-8 text-emerald-400"><path fillRule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm3.857-9.809a.75.75 0 0 0-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 1 0-1.06 1.061l2.5 2.5a.75.75 0 0 0 1.137-.089l4-5.5Z" clipRule="evenodd" /></svg>
               </div>
-              <h3 className="text-2xl font-black text-white mb-2">Rate the Builder</h3>
-              <p className="text-slate-400 text-sm">How was your experience working with @{builderUsername || project.builder}?</p>
-            </div>
-
-            <div className="flex justify-center gap-2 mb-8">
-              {[1, 2, 3, 4, 5].map((star) => (
-                <button
-                  key={star}
-                  onMouseEnter={() => setHoveredRating(star)}
-                  onMouseLeave={() => setHoveredRating(0)}
-                  onClick={() => setSelectedRating(star)}
-                  className="focus:outline-none transition-transform hover:scale-110"
-                >
-                  <svg 
-                    xmlns="http://www.w3.org/2000/svg" 
-                    viewBox="0 0 24 24" 
-                    fill="currentColor" 
-                    className={`w-10 h-10 transition-colors duration-200 ${
-                      star <= (hoveredRating || selectedRating) 
-                        ? 'text-yellow-400' 
-                        : 'text-slate-700'
-                    }`}
-                  >
-                    <path fillRule="evenodd" d="M10.788 3.21c.448-1.077 1.976-1.077 2.424 0l2.082 5.006 5.404.434c1.164.093 1.636 1.545.749 2.305l-4.117 3.527 1.257 5.273c.271 1.136-.964 2.033-1.96 1.425L12 18.354 7.373 21.18c-.996.608-2.231-.29-1.96-1.425l1.257-5.273-4.117-3.527c-.887-.76-.415-2.212.749-2.305l5.404-.434 2.082-5.005Z" clipRule="evenodd" />
-                  </svg>
-                </button>
-              ))}
+              <h3 className="text-2xl font-black text-white mb-2">Approve the work?</h3>
+              <p className="text-slate-400 text-sm">
+                This releases the escrow to {builderLabel}. It cannot be undone. You can rate the builder once it goes through.
+              </p>
             </div>
 
             <div className="flex gap-3">
-              <button 
-                onClick={() => setShowRatingModal(false)}
+              <button
+                onClick={() => setShowReleaseModal(false)}
                 className="flex-1 py-3 px-4 rounded-xl font-bold text-slate-400 hover:text-white hover:bg-slate-800 transition-all text-sm border border-slate-800"
               >
                 Cancel
@@ -883,6 +904,35 @@ export default function ProjectPage() {
             ) : (
               <p className="text-white font-mono text-sm truncate">{project.builder}</p>
             )}
+
+            {rating != null ? (
+              <div className="flex items-center gap-0.5 mt-2" title={`Rated ${rating} of 5 by the client`}>
+                {[1, 2, 3, 4, 5].map((n) => <Star key={n} filled={n <= rating} />)}
+              </div>
+            ) : canRate ? (
+              <div className="mt-2">
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-0.5" onMouseLeave={() => setHoveredScore(0)}>
+                    {[1, 2, 3, 4, 5].map((n) => (
+                      <button key={n} type="button" disabled={ratingBusy}
+                              aria-label={`${n} star${n > 1 ? 's' : ''}`}
+                              onMouseEnter={() => setHoveredScore(n)}
+                              onClick={() => setPickedScore(n)}
+                              className="focus:outline-none transition-transform hover:scale-110 disabled:cursor-not-allowed">
+                        <Star filled={n <= (hoveredScore || pickedScore)} />
+                      </button>
+                    ))}
+                  </div>
+                  {pickedScore > 0 && (
+                    <button type="button" onClick={saveRating} disabled={ratingBusy}
+                            className="text-[10px] font-black uppercase tracking-wider text-yellow-400 hover:text-yellow-300 disabled:opacity-50">
+                      {ratingBusy ? 'Saving…' : 'Rate'}
+                    </button>
+                  )}
+                </div>
+                {ratingError && <p className="text-[11px] text-red-400 mt-1 leading-snug">{ratingError}</p>}
+              </div>
+            ) : null}
           </div>
           <div className="bg-[#050B14] border border-slate-800/80 rounded-2xl p-5">
             <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Client</p>
@@ -1346,7 +1396,7 @@ export default function ProjectPage() {
               {isClient && onchain?.status === ProjectStatus.Delivered && !isRevisionMode && (
                  <div className="flex flex-col sm:flex-row gap-4 mt-6 border-t border-slate-800 pt-6">
                    <button 
-                     onClick={() => setShowRatingModal(true)} 
+                     onClick={() => setShowReleaseModal(true)}
                      disabled={loading} 
                      className="flex-[2] bg-emerald-600 hover:bg-emerald-500 text-white py-4 rounded-xl font-bold transition-all shadow-[0_0_20px_-5px_rgba(16,185,129,0.4)]"
                    >
