@@ -54,7 +54,7 @@ export function Card({
   }[tone];
 
   return (
-    <div className={`bg-[#050B14] border ${border} rounded-3xl p-6 md:p-8 ${className}`}>
+    <div className={`bg-[#050B14] border ${border} rounded-3xl p-5 md:p-6 ${className}`}>
       {children}
     </div>
   );
@@ -77,7 +77,7 @@ export function PanelHeading({
   right?: React.ReactNode;
 }) {
   return (
-    <div className="flex items-start justify-between gap-4 mb-6">
+    <div className="flex items-start justify-between gap-4 mb-4">
       <div className="min-w-0">
         <h2 className="text-xl font-black text-white leading-tight">{title}</h2>
         {subtitle && <p className="mt-1.5 text-sm text-slate-400 leading-relaxed">{subtitle}</p>}

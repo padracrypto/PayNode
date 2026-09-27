@@ -32,7 +32,6 @@ import {
 import {
   DISPUTE_WINDOWS,
   deriveDisputeStage,
-  resolutionPaths,
   resolverAvailability,
   STAGE_LABEL,
   type DeliverableRow,
@@ -70,12 +69,9 @@ export type DisputePanelProps = {
   builderLabel: string;
 
   hasArbitrator: boolean;
-  arbitratorLabel?: string;
   hasResolver: boolean;
   /** `resolverFor(projectId)` — the epoch key the contract will verify against. */
   expectedSigner: string | undefined;
-  /** `onchain.resolverEpoch` — the generation that key belongs to, quoted in the path list. */
-  resolverEpoch?: number;
   /** `deriveActions().canProposeSettlement` — whether PATH 3 is this viewer's to start. */
   canProposeSettlement: boolean;
 
@@ -109,10 +105,8 @@ export function DisputePanel(props: DisputePanelProps) {
     clientLabel,
     builderLabel,
     hasArbitrator,
-    arbitratorLabel,
     hasResolver,
     expectedSigner,
-    resolverEpoch,
     canProposeSettlement,
     canDeliver,
     canRaiseDispute,
@@ -163,19 +157,9 @@ export function DisputePanel(props: DisputePanelProps) {
     if (resolution && resolution.status !== 'pending') setRequestInFlight(false);
   }, [resolution]);
 
+  // Whether PATH 2 is open. Why it is closed, when it is, is the page's Dispute open block's to
+  // say — it renders `resolutionPaths()` once for the whole screen.
   const availability = resolverAvailability({ status, hasArbitrator, hasResolver });
-
-  /**
-   * The same three routes the warning modal and the page's Disputed block describe.
-   *
-   * The panel does not re-render the whole list — the page shows it once, directly above the
-   * controls for PATHS 1 and 3, and a second copy on the same screen would make both read as
-   * less authoritative. What the panel needs from it is the wording for PATH 2, which it owns:
-   * why the route is closed when it is, and which routes are left when it is.
-   */
-  const paths = resolutionPaths({ hasArbitrator, hasResolver, arbitratorLabel, resolverEpoch });
-  const resolverPath = paths.find((p) => p.id === 'resolver');
-  const otherOpenPaths = paths.filter((p) => p.available && p.id !== 'resolver');
 
   const requestRuling = async () => {
     if (projectId === undefined) return;
@@ -206,7 +190,7 @@ export function DisputePanel(props: DisputePanelProps) {
   const deliveredBeforeDispute = preDisputeStatus === ProjectStatus.Delivered;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* ===================== 1. DELIVERABLES ===================== */}
       {canDeliver && role === 'builder' && wallet && (
         <Card>
@@ -247,13 +231,15 @@ export function DisputePanel(props: DisputePanelProps) {
 
       {/* ===================== 2. THE DISPUTE ===================== */}
       {disputed && (
-        <Card tone="dispute" className="space-y-6">
+        <Card tone="dispute" className="space-y-4">
           <PanelHeading
             title="Evidence and claims"
             subtitle={
               <>
-                Both parties&apos; statements are visible to each other throughout. The escrow stays
-                frozen until this is resolved.
+                Filing a statement is optional. The AI resolver evaluates the immutable project
+                brief, on-chain timeline, and submitted deliverables as the primary ground truth.
+                Statements are cross-checked against deliverables to identify specific grievances
+                and cannot alter original scope requirements.
               </>
             }
             right={<Badge tone="warn">{STAGE_LABEL[stage]}</Badge>}
@@ -272,31 +258,13 @@ export function DisputePanel(props: DisputePanelProps) {
             canFile={stage === 'evidence_open' || stage === 'arbitrating'}
           />
 
-          {/* ---- Requesting a ruling (PATH 2) ---- */}
-          {(stage === 'evidence_open' || stage === 'arbitrating') && (
-            <div className="border-t border-amber-900/30 pt-6">
-              {!availability.available ? (
-                /* The reason comes from the shared path descriptor, so this box and the path
-                   list above it cannot give two different accounts of why PATH 2 is off. The
-                   remaining routes are named from the same data rather than hardcoded: on a
-                   project with a designated arbitrator there are two of them, and on one with
-                   neither adjudicator there is only mutual settlement. */
-                <Alert tone="neutral" label="Path 2 unavailable — automatic AI arbitrator">
-                  {resolverPath?.closedBecause ?? availability.reason}
-                  {otherOpenPaths.length > 0 && (
-                    <>
-                      {' '}
-                      Still open:{' '}
-                      <span className="text-slate-200 font-bold">
-                        {joinTitles(otherOpenPaths.map((p) => p.title.toLowerCase()))}
-                      </span>
-                      . {otherOpenPaths.length === 1 ? 'Its controls are' : 'Their controls are'} in
-                      the Dispute open panel above. Failing that, the {DISPUTE_WINDOWS.staleDays}-day
-                      timeout closes it on fixed terms.
-                    </>
-                  )}
-                </Alert>
-              ) : stage === 'arbitrating' ? (
+          {/* ---- Requesting a ruling (PATH 2) ----
+              Rendered only when PATH 2 is actually open. When it is closed, the Dispute open
+              block above already says so in its closed-path badges, and a second banner here
+              restated the same thing below the form. */}
+          {(stage === 'evidence_open' || stage === 'arbitrating') && availability.available && (
+            <div className="border-t border-amber-900/30 pt-4">
+              {stage === 'arbitrating' ? (
                 <div className="bg-[#0f172a] border border-amber-900/40 rounded-2xl p-5">
                   <div className="flex items-center gap-3">
                     <Spinner className="w-5 h-5" />
@@ -462,15 +430,6 @@ export function DisputePanel(props: DisputePanelProps) {
 /* -------------------------------------------------------------------------- */
 /*                                 SUB-PARTS                                  */
 /* -------------------------------------------------------------------------- */
-
-/**
- * "a and b" rather than "a, b" — the list is at most two items long (a project has one
- * adjudicator, plus mutual settlement), and at that length a comma reads as a truncated list.
- */
-function joinTitles(titles: string[]): string {
-  if (titles.length <= 1) return titles[0] ?? '';
-  return `${titles.slice(0, -1).join(', ')} and ${titles[titles.length - 1]}`;
-}
 
 /**
  * Render the request route's answer.

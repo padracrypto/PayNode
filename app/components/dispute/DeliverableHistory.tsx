@@ -6,8 +6,9 @@
  * Visible to BOTH parties and to a designated arbitrator — RLS decides that, not this
  * component. It is rendered in every stage from Delivered onward, including once a dispute is
  * open and after it has settled, because the record of what was shipped is the thing an
- * arbitration is about and blanking it at the moment of the dispute is the exact failure the
- * page's `deliveryOnRecord` comment already documents for the legacy single-delivery fields.
+ * arbitration is about and blanking it at the moment of the dispute would leave both parties
+ * arguing from memory. It is also the only place the work is shown: the page's own delivered
+ * card appears only while review actions are pending.
  *
  * Ordering is ascending to match the order the resolver read them in (`gatherCaseFile` orders
  * ascending too), so a party reading the reasoning can follow it down this list.

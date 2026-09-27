@@ -80,7 +80,7 @@ export function ClaimCenter({
   const mine = filingRole ? claims.filter((c) => c.role === filingRole) : [];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* ------------------------------- FILING ------------------------------- */}
       {canFile && filingRole && wallet && (
         <ClaimForm
@@ -266,13 +266,13 @@ function ClaimForm({
 
   return (
     <form onSubmit={submit} className="bg-[#0f172a] border border-slate-800/80 rounded-2xl p-5">
-      <div className="flex items-center gap-2 mb-4">
+      <div className="flex items-center gap-2 mb-3">
         <Badge tone={role === 'client' ? 'client' : 'builder'}>
           Filing as the {role}
         </Badge>
       </div>
 
-      <div className="space-y-4">
+      <div className="space-y-3">
         <div>
           <label htmlFor="claim-body" className="block mb-2">
             <SectionLabel>Your statement</SectionLabel>
@@ -280,7 +280,7 @@ function ClaimForm({
           <textarea
             id="claim-body"
             className={TEXTAREA_CLASS}
-            rows={7}
+            rows={4}
             disabled={file.isPending}
             placeholder={
               role === 'client'
@@ -300,7 +300,7 @@ function ClaimForm({
           <textarea
             id="claim-urls"
             className={`${TEXTAREA_CLASS} font-mono text-xs`}
-            rows={3}
+            rows={2}
             disabled={file.isPending}
             placeholder={'https://github.com/acme/app/pull/42/files\nhttps://drive.example.com/screenshot.png'}
             value={urlsRaw}
@@ -318,10 +318,8 @@ function ClaimForm({
           {/* Screenshots are the commonest evidence in a delivery dispute and there is no
               upload path in this build, so say where to put them rather than leaving a user
               to discover that a file cannot be attached. */}
-          <p className="text-xs text-slate-600 mt-2 leading-relaxed">
-            Screenshots need to be hosted somewhere the link resolves publicly — the arbitrator
-            cannot open a file from your machine, and cannot open these links at all: it weighs a
-            URL by what your statement says is at it. Describe each one.
+          <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+            The arbitrator cannot open links — describe what each one shows in your statement.
           </p>
         </div>
       </div>
@@ -335,7 +333,7 @@ function ClaimForm({
         </div>
       )}
 
-      <div className="flex flex-col-reverse sm:flex-row gap-3 mt-5">
+      <div className="flex flex-col-reverse sm:flex-row gap-3 mt-4">
         {alreadyFiled > 0 && (
           <Button
             type="button"

@@ -37,17 +37,42 @@ export type ResolutionPathsProps = {
   activePathId?: ResolutionPathId;
   /** Per-path pointer to where the control for it lives, e.g. "Propose a split below". */
   hints?: Partial<Record<ResolutionPathId, React.ReactNode>>;
+  /**
+   * Render closed routes as a single line of badges instead of full cards. Used once a dispute
+   * is open, where the reader needs the actionable route in front of them; the reason a route is
+   * closed stays one hover away rather than a paragraph each. The pre-dispute modal keeps the
+   * full cards, since that is where a party decides whether to escalate at all.
+   */
+  collapseClosed?: boolean;
 };
 
-export function ResolutionPaths({ paths, activePathId, hints }: ResolutionPathsProps) {
+export function ResolutionPaths({ paths, activePathId, hints, collapseClosed }: ResolutionPathsProps) {
+  const shown = collapseClosed ? paths.filter((p) => p.available) : paths;
+  const closed = collapseClosed ? paths.filter((p) => !p.available) : [];
+
   return (
-    <ul className="space-y-3">
-      {paths.map((path) => (
-        <li key={path.id}>
-          <PathCard path={path} inProgress={path.id === activePathId} hint={hints?.[path.id]} />
-        </li>
-      ))}
-    </ul>
+    <div className="space-y-2">
+      <ul className="space-y-2">
+        {shown.map((path) => (
+          <li key={path.id}>
+            <PathCard path={path} inProgress={path.id === activePathId} hint={hints?.[path.id]} />
+          </li>
+        ))}
+      </ul>
+
+      {closed.length > 0 && (
+        <p className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+          <span>Not available for this project:</span>
+          {closed.map((path) => (
+            <span key={path.id} title={path.closedBecause} className="cursor-help">
+              <Badge tone="neutral">
+                Path {path.pathNumber} · {path.title}
+              </Badge>
+            </span>
+          ))}
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -64,7 +89,7 @@ function PathCard({
 
   return (
     <div
-      className={`rounded-2xl border p-4 md:p-5 ${
+      className={`rounded-2xl border p-4 ${
         open
           ? 'bg-[#050B14] border-slate-800'
           : // Closed routes sit flatter and dimmer than open ones, so the difference survives a
@@ -109,7 +134,7 @@ function PathCard({
           )}
 
           {open && path.facts && (
-            <dl className="mt-4 grid gap-y-2 gap-x-4 sm:grid-cols-[auto_1fr] text-xs leading-relaxed">
+            <dl className="mt-3 grid gap-y-1.5 gap-x-4 sm:grid-cols-[auto_1fr] text-xs leading-relaxed">
               <Fact term="Who starts it">{path.facts.starts}</Fact>
               <Fact term="How fast">{path.facts.speed}</Fact>
               <Fact term="How binding">{path.facts.binding}</Fact>
@@ -122,7 +147,7 @@ function PathCard({
 
           {/* The contract function, for a party who wants to check the claim rather than take
               it. Quiet by design: this is a receipt, not a feature. */}
-          <p className="text-[10px] font-mono text-slate-600 mt-3">
+          <p className="text-[10px] font-mono text-slate-600 mt-2">
             Path {path.pathNumber} · {path.onchain}
           </p>
         </div>

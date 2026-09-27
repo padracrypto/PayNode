@@ -223,31 +223,15 @@ export default function ProjectPage() {
   const hasOffer = !!offer && offer[0] !== zeroAddress;
 
   /**
-   * Whether there is delivered work to show.
+   * Whether to show the "Work Delivered for Review" card.
    *
-   * This used to be `status === Delivered || status === Completed`, which blanked the notes
-   * and the link the instant a dispute was opened — `status` moves to Disputed — and again if
-   * the ruling went Refunded. That hid the only evidence of the work at exactly the moment the
-   * arbitrator was asked to judge it, and left both parties arguing from memory.
-   *
-   * `preDispute` is the status the contract itself captured at raiseDispute, so it is a
-   * reliable answer to "had this been delivered before it went sideways?". It defaults to
-   * AwaitingFunds, so a project refunded without any delivery still correctly shows nothing.
+   * Only while the chain says Delivered. The card holds nothing but actions — the client's
+   * approve/revise and the builder's force release — and every one of them is gated on
+   * Delivered, so in Completed, Disputed or Refunded it would be a bare heading. The work
+   * itself is never hidden by this: <DisputePanel />'s submission record renders it in every
+   * state from the first submission onward.
    */
-  const deliveryOnRecord =
-    onchain?.status === ProjectStatus.Delivered ||
-    onchain?.status === ProjectStatus.Completed ||
-    ((onchain?.status === ProjectStatus.Disputed || onchain?.status === ProjectStatus.Refunded) &&
-      onchain.preDispute === ProjectStatus.Delivered);
-
-  const deliveredCard =
-    onchain?.status === ProjectStatus.Completed
-      ? { border: 'border-emerald-900/30', text: 'text-emerald-400', title: 'Delivered Work (Approved)' }
-      : onchain?.status === ProjectStatus.Disputed
-        ? { border: 'border-amber-900/30', text: 'text-amber-400', title: 'Delivered Work (Under Dispute)' }
-        : onchain?.status === ProjectStatus.Refunded
-          ? { border: 'border-red-900/30', text: 'text-red-400', title: 'Delivered Work (Refunded to Client)' }
-          : { border: 'border-purple-900/30', text: 'text-purple-400', title: 'Work Delivered for Review' };
+  const awaitingReview = onchain?.status === ProjectStatus.Delivered;
 
   // The delivery deadline stops meaning anything once the contract has finalized. Read from the
   // chain rather than the Supabase `status` column, which only moves when the indexer catches up.
@@ -1010,7 +994,7 @@ export default function ProjectPage() {
               resolution paths are surfaced here.
               ============================================================ */}
           {onchain?.status === ProjectStatus.Disputed && (
-            <div className="bg-amber-950/20 border border-amber-900/50 p-6 md:p-8 rounded-3xl space-y-6">
+            <div className="bg-amber-950/20 border border-amber-900/50 p-5 md:p-6 rounded-3xl space-y-4">
               {/* The routes out, from the one place that decides them.
                   `resolutionPaths()` in lib/dispute/types.ts answers this for the warning modal
                   and for <DisputePanel /> too, so a party cannot be told here that a path is open
@@ -1031,8 +1015,8 @@ export default function ProjectPage() {
                     </>
                   ) : (
                     <>
-                      The escrow is frozen until this is resolved. Here is every route out of it,
-                      as it stands for this project.
+                      The escrow is frozen until this is resolved. These are the routes open for
+                      this project.
                     </>
                   )}
                 </p>
@@ -1040,6 +1024,7 @@ export default function ProjectPage() {
 
               <ResolutionPaths
                 paths={disputePaths}
+                collapseClosed
                 activePathId={hasOffer ? 'settlement' : undefined}
                 hints={{
                   arbitrator: isArbitrator
@@ -1139,7 +1124,7 @@ export default function ProjectPage() {
               )}
 
               {/* ---- PATH 4: the permissionless deadlock breaker ---- */}
-              <div className="border-t border-amber-900/30 pt-5">
+              <div className="border-t border-amber-900/30 pt-4">
                 {act?.canForceResolve ? (
                   <button onClick={forceResolve} disabled={loading}
                           className="w-full bg-amber-600 hover:bg-amber-500 text-white py-3 rounded-xl font-bold text-sm">
@@ -1190,10 +1175,8 @@ export default function ProjectPage() {
             clientLabel={clientLabel}
             builderLabel={builderLabel}
             hasArbitrator={hasArbitrator}
-            arbitratorLabel={arbitratorLabel}
             hasResolver={hasResolver}
             expectedSigner={resolverAddr as string | undefined}
-            resolverEpoch={onchain?.resolverEpoch}
             canProposeSettlement={act?.canProposeSettlement ?? false}
             canDeliver={act?.canDeliver ?? false}
             canRaiseDispute={act?.canRaiseDispute ?? false}
@@ -1306,11 +1289,11 @@ export default function ProjectPage() {
               a single overwritable pair of columns. The builder's cancel link moved up with the
               panel, where it now covers every stage the contract permits it in. */}
 
-          {deliveryOnRecord && (
-            <div className={`bg-[#050B14] border ${deliveredCard.border} p-6 md:p-8 rounded-3xl`}>
-              <h2 className={`text-xl font-bold ${deliveredCard.text} mb-6 flex items-center gap-2`}>
+          {awaitingReview && (
+            <div className="bg-[#050B14] border border-purple-900/30 p-6 md:p-8 rounded-3xl">
+              <h2 className="text-xl font-bold text-purple-400 mb-6 flex items-center gap-2">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5"><path fillRule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm3.857-9.809a.75.75 0 0 0-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 1 0-1.06 1.061l2.5 2.5a.75.75 0 0 0 1.137-.089l4-5.5Z" clipRule="evenodd" /></svg>
-                {deliveredCard.title}
+                Work Delivered for Review
               </h2>
 
               {/* The legacy Notes/Link fields were removed from this card: the submission record
