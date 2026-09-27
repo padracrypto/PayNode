@@ -188,6 +188,10 @@ export function DisputePanel(props: DisputePanelProps) {
   const settled = stage === 'settled';
   const disputed = status === ProjectStatus.Disputed;
   const deliveredBeforeDispute = preDisputeStatus === ProjectStatus.Delivered;
+  // Someone who will actually read the case file: the named arbitrator (PATH 1) or the AI
+  // resolver (PATH 2). With neither, mutual settlement is the only route and a statement has no
+  // reader, so the evidence box is not offered at all.
+  const hasAdjudicator = hasArbitrator || hasResolver;
 
   return (
     <div className="space-y-4">
@@ -221,7 +225,7 @@ export function DisputePanel(props: DisputePanelProps) {
             projectRowId={projectRowId}
             stage={stage}
             emptyHint={
-              disputed
+              disputed && hasAdjudicator
                 ? 'The builder submitted no deliverables. The arbitrator will weigh that against them under delivery-against-scope — work never delivered earns nothing, however much effort is described.'
                 : 'Nothing has been submitted yet.'
             }
@@ -230,7 +234,7 @@ export function DisputePanel(props: DisputePanelProps) {
       )}
 
       {/* ===================== 2. THE DISPUTE ===================== */}
-      {disputed && (
+      {disputed && hasAdjudicator && (
         <Card tone="dispute" className="space-y-4">
           <PanelHeading
             title="Evidence and claims"
