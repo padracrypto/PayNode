@@ -110,6 +110,9 @@ export default function ProjectPage() {
   const [activeAction, setActiveAction] = useState<string | null>(null);
   const [banner, setBanner] = useState<{ kind: 'error' | 'info'; text: string } | null>(null);
   const [settlementBps, setSettlementBps] = useState<number>(5000);
+  // Receiver of a pending offer can open the slider to counter it. proposeSettlement overwrites
+  // the live offer on-chain, so a counter is just a new proposal from the other party.
+  const [showCounter, setShowCounter] = useState(false);
   const [rulingBps, setRulingBps] = useState<number>(5000);
   const { data: hash, error: writeError, writeContract } = useWriteContract();
   // `isSuccess` means the receipt was FETCHED, not that the transaction succeeded. viem
@@ -615,8 +618,12 @@ export default function ProjectPage() {
           // show every recipient the same dispute twice.
           break;
         case 'OfferSent':
+          setShowCounter(false);
           await sendNotification(isClient ? project.builder : project.client,
-            `You have a settlement offer on "${project.title}".`, 'REVISION_REQUESTED');
+            showCounter
+              ? `You have a settlement counter-offer on "${project.title}".`
+              : `You have a settlement offer on "${project.title}".`,
+            'REVISION_REQUESTED');
           break;
         case 'Settled':
         case 'ForceResolved':
@@ -1098,10 +1105,47 @@ export default function ProjectPage() {
                           Withdraw offer
                         </button>
                       ) : (
-                        <button onClick={acceptSettlement} disabled={loading}
-                                className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-xl font-bold text-sm">
-                          {loading ? txStatus : 'Accept and settle'}
-                        </button>
+                        <>
+                          <button onClick={acceptSettlement} disabled={loading}
+                                  className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white py-3 rounded-xl font-bold text-sm">
+                            {loading && activeAction === 'Settled' ? txStatus : 'Accept and settle'}
+                          </button>
+
+                          {showCounter ? (
+                            <div className="border-t border-slate-800 mt-4 pt-4">
+                              <div className="flex items-center justify-between mb-3">
+                                <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                                  Your counter-offer
+                                </p>
+                                <button onClick={() => setShowCounter(false)} disabled={loading}
+                                        className="text-slate-500 hover:text-slate-300 text-xs font-bold">
+                                  Cancel
+                                </button>
+                              </div>
+                              <input type="range" min={0} max={10000} step={500} value={settlementBps}
+                                     onChange={(e) => setSettlementBps(Number(e.target.value))}
+                                     className="w-full accent-blue-500 mb-2" />
+                              <div className="flex justify-between text-xs text-slate-400 mb-4">
+                                <span>Client {(10000 - settlementBps) / 100}%</span>
+                                <span>Builder {settlementBps / 100}%</span>
+                              </div>
+                              <button onClick={proposeSettlement}
+                                      disabled={loading || settlementBps === offer![1]}
+                                      className="w-full bg-slate-800 hover:bg-slate-700 border border-slate-700 disabled:opacity-50 disabled:cursor-not-allowed text-white py-2.5 rounded-xl font-bold text-sm">
+                                {loading && activeAction === 'OfferSent' ? txStatus : 'Send counter-offer'}
+                              </button>
+                              <p className="text-[11px] text-slate-500 mt-2 leading-relaxed">
+                                Replaces the current offer. The other party will need to accept your split.
+                              </p>
+                            </div>
+                          ) : (
+                            <button onClick={() => { setSettlementBps(offer![1]); setShowCounter(true); }}
+                                    disabled={loading}
+                                    className="w-full mt-3 text-slate-400 hover:text-white text-xs font-bold underline underline-offset-4">
+                              Decline &amp; counter-offer
+                            </button>
+                          )}
+                        </>
                       )}
                     </>
                   ) : (
