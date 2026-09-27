@@ -51,10 +51,18 @@ const short = (a?: string) => (a ? `${a.slice(0, 6)}…${a.slice(-4)}` : '');
 const STAR_PATH =
   'M10.788 3.21c.448-1.077 1.976-1.077 2.424 0l2.082 5.006 5.404.434c1.164.093 1.636 1.545.749 2.305l-4.117 3.527 1.257 5.273c.271 1.136-.964 2.033-1.96 1.425L12 18.354 7.373 21.18c-.996.608-2.231-.29-1.96-1.425l1.257-5.273-4.117-3.527c-.887-.76-.415-2.212.749-2.305l5.404-.434 2.082-5.005Z';
 
-function Star({ filled }: { filled: boolean }) {
+function Star({
+  filled,
+  size = 'w-4 h-4',
+  emptyClass = 'text-slate-700',
+}: {
+  filled: boolean;
+  size?: string;
+  emptyClass?: string;
+}) {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"
-         className={`w-4 h-4 transition-colors ${filled ? 'text-yellow-400' : 'text-slate-700'}`}>
+         className={`${size} transition-colors ${filled ? 'text-yellow-400' : emptyClass}`}>
       <path fillRule="evenodd" d={STAR_PATH} clipRule="evenodd" />
     </svg>
   );
@@ -120,6 +128,10 @@ export default function ProjectPage() {
   const [hoveredScore, setHoveredScore] = useState(0);
   const [ratingBusy, setRatingBusy] = useState(false);
   const [ratingError, setRatingError] = useState('');
+  const [showRateModal, setShowRateModal] = useState(false);
+  // The rate modal opens by itself once per page load. "Not now" must stick, so the trigger
+  // cannot simply be `canRate` — that stays true until a rating exists.
+  const ratePromptedRef = useRef(false);
 
   // Replaces the window.confirm() that used to gate raiseDispute. See
   // app/components/dispute/DisputeWarningModal.tsx for why a native confirm was not adequate
@@ -789,7 +801,28 @@ export default function ProjectPage() {
   // status the indexer has not caught up with yet, so the page and the action agree.
   const concluded =
     onchain?.status === ProjectStatus.Completed || onchain?.status === ProjectStatus.Refunded;
+  // `rating === null` (not undefined) means the ratings read has returned empty, so the modal
+  // never pops for a project that turns out to be rated already.
   const canRate = isClient && concluded && rating === null;
+
+  // Auto-open for the client, whether they arrive at an already-concluded project or watch it
+  // conclude in front of them (the release confirms, the chain flips to Completed).
+  useEffect(() => {
+    if (!canRate || ratePromptedRef.current) return;
+    ratePromptedRef.current = true;
+    setShowRateModal(true);
+  }, [canRate]);
+
+  const openRateModal = () => {
+    setRatingError('');
+    setShowRateModal(true);
+  };
+
+  const closeRateModal = () => {
+    if (ratingBusy) return;
+    setShowRateModal(false);
+    setHoveredScore(0);
+  };
 
   const saveRating = async () => {
     if (!pickedScore || ratingBusy) return;
@@ -797,8 +830,12 @@ export default function ProjectPage() {
     setRatingError('');
     try {
       const res = await submitRating(Number(project.id), pickedScore);
-      if (res.ok) setRating(res.score);
-      else setRatingError(res.message);
+      if (res.ok) {
+        setRating(res.score);
+        setShowRateModal(false);
+      } else {
+        setRatingError(res.message);
+      }
     } catch {
       setRatingError('Could not save your rating. Try again shortly.');
     }
@@ -832,6 +869,46 @@ export default function ProjectPage() {
         onConfirm={raiseDispute}
         onCancel={() => setShowDisputeModal(false)}
       />
+
+      {showRateModal && canRate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={closeRateModal}></div>
+          <div role="dialog" aria-modal="true" aria-labelledby="rate-builder-title"
+               className="bg-[#0f172a] border border-slate-800 rounded-3xl p-8 max-w-md w-full relative z-10 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+            <div className="text-center mb-6">
+              <h3 id="rate-builder-title" className="text-2xl font-black text-white mb-2">Rate the Builder</h3>
+              <p className="text-slate-400 text-sm">
+                This project has concluded. How was your experience working with {builderLabel}?
+              </p>
+            </div>
+
+            <div className="flex justify-center gap-2 mb-6" onMouseLeave={() => setHoveredScore(0)}>
+              {[1, 2, 3, 4, 5].map((n) => (
+                <button key={n} type="button" disabled={ratingBusy}
+                        aria-label={`${n} star${n > 1 ? 's' : ''}`}
+                        onMouseEnter={() => setHoveredScore(n)}
+                        onClick={() => setPickedScore(n)}
+                        className="focus:outline-none transition-transform hover:scale-110 disabled:cursor-not-allowed">
+                  <Star filled={n <= (hoveredScore || pickedScore)} size="w-10 h-10" />
+                </button>
+              ))}
+            </div>
+
+            {ratingError && <p className="text-sm text-red-400 text-center mb-4">{ratingError}</p>}
+
+            <div className="flex gap-3">
+              <button type="button" onClick={closeRateModal} disabled={ratingBusy}
+                      className="flex-1 py-3 px-4 rounded-xl font-bold text-slate-400 hover:text-white hover:bg-slate-800 transition-all text-sm border border-slate-800 disabled:opacity-50">
+                Not now
+              </button>
+              <button type="button" onClick={saveRating} disabled={!pickedScore || ratingBusy}
+                      className="flex-[2] bg-yellow-500 hover:bg-yellow-400 disabled:opacity-50 disabled:cursor-not-allowed text-slate-950 py-3 px-4 rounded-xl font-bold transition-all text-sm">
+                {ratingBusy ? 'Saving…' : 'Submit rating'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showReleaseModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -910,28 +987,12 @@ export default function ProjectPage() {
                 {[1, 2, 3, 4, 5].map((n) => <Star key={n} filled={n <= rating} />)}
               </div>
             ) : canRate ? (
-              <div className="mt-2">
-                <div className="flex items-center gap-2">
-                  <div className="flex items-center gap-0.5" onMouseLeave={() => setHoveredScore(0)}>
-                    {[1, 2, 3, 4, 5].map((n) => (
-                      <button key={n} type="button" disabled={ratingBusy}
-                              aria-label={`${n} star${n > 1 ? 's' : ''}`}
-                              onMouseEnter={() => setHoveredScore(n)}
-                              onClick={() => setPickedScore(n)}
-                              className="focus:outline-none transition-transform hover:scale-110 disabled:cursor-not-allowed">
-                        <Star filled={n <= (hoveredScore || pickedScore)} />
-                      </button>
-                    ))}
-                  </div>
-                  {pickedScore > 0 && (
-                    <button type="button" onClick={saveRating} disabled={ratingBusy}
-                            className="text-[10px] font-black uppercase tracking-wider text-yellow-400 hover:text-yellow-300 disabled:opacity-50">
-                      {ratingBusy ? 'Saving…' : 'Rate'}
-                    </button>
-                  )}
-                </div>
-                {ratingError && <p className="text-[11px] text-red-400 mt-1 leading-snug">{ratingError}</p>}
-              </div>
+              <button type="button" onClick={openRateModal} title="Rate this builder"
+                      className="group flex items-center gap-0.5 mt-2 focus:outline-none">
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <Star key={n} filled={false} emptyClass="text-slate-700 group-hover:text-yellow-400/60" />
+                ))}
+              </button>
             ) : null}
           </div>
           <div className="bg-[#050B14] border border-slate-800/80 rounded-2xl p-5">
@@ -1293,6 +1354,20 @@ export default function ProjectPage() {
               <button onClick={cancelByBuilder} disabled={loading}
                       className="text-slate-500 hover:text-red-400 text-xs font-bold transition-colors underline decoration-slate-700 underline-offset-4 disabled:opacity-50">
                 Unable to complete? Cancel the contract and refund the client
+              </button>
+            </div>
+          )}
+
+          {/* Fallback for a client who dismissed the rate modal with "Not now". */}
+          {canRate && (
+            <div className="mb-4 bg-[#050B14] border border-slate-800/80 p-5 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h3 className="text-white font-bold text-sm mb-1">Project concluded</h3>
+                <p className="text-sm text-slate-400">How was working with {builderLabel}? Your rating shows on their profile.</p>
+              </div>
+              <button type="button" onClick={openRateModal}
+                      className="shrink-0 bg-yellow-500 hover:bg-yellow-400 text-slate-950 px-6 py-2.5 rounded-xl font-bold text-sm transition-all">
+                Rate Builder
               </button>
             </div>
           )}
