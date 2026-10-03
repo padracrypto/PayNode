@@ -205,6 +205,13 @@ export default function ProjectPage() {
     query: { enabled: pid !== undefined },
   });
 
+  // The key that funding would snapshot right now. Before funding, `resolverFor` reads epoch 0
+  // (the struct default) rather than the epoch this project will actually be bound to.
+  const { data: liveResolverAddr } = useReadContract({
+    ...escrowContract,
+    functionName: 'resolverSigner',
+  });
+
   const { data: pendingOffer, refetch: refetchOffer } = useReadContract({
     ...escrowContract,
     functionName: 'settlements',
@@ -252,7 +259,13 @@ export default function ProjectPage() {
   }, [onchainStatus]);
 
   const hasArbitrator = !!arbitratorAddr && arbitratorAddr !== zeroAddress;
-  const hasResolver = !!resolverAddr && resolverAddr !== zeroAddress;
+  const effectiveResolver =
+    onchain?.status === ProjectStatus.AwaitingFunds ? liveResolverAddr : resolverAddr;
+  const hasResolver = !!effectiveResolver && effectiveResolver !== zeroAddress;
+  // Funding snapshots the resolver epoch. Funding an automatic-path project while the live key
+  // is zero locks it out of AI resolution permanently, whatever key is rotated in later.
+  const fundBlockedNoAdjudicator =
+    onchain?.status === ProjectStatus.AwaitingFunds && !hasArbitrator && !hasResolver;
   const offer = pendingOffer as readonly [`0x${string}`, number] | undefined;
   const hasOffer = !!offer && offer[0] !== zeroAddress;
 
@@ -1424,8 +1437,15 @@ export default function ProjectPage() {
               <div>
                 <h3 className="text-white font-bold mb-1">Action Required</h3>
                 <p className="text-sm text-slate-400">Secure the smart contract to start the project.</p>
+                {fundBlockedNoAdjudicator && (
+                  <p className="text-xs text-amber-400 font-bold mt-2">
+                    Automatic resolution is not enabled on the escrow contract yet. Funding now would
+                    leave this project with no AI resolver for its whole lifetime, so funding is
+                    paused until the resolver key is activated.
+                  </p>
+                )}
               </div>
-              <button onClick={fundEscrow} disabled={loading} className="w-full md:w-auto bg-blue-600 hover:bg-blue-500 text-white px-8 py-3 rounded-xl font-bold transition-all shadow-[0_0_20px_-5px_rgba(37,99,235,0.4)]">
+              <button onClick={fundEscrow} disabled={loading || fundBlockedNoAdjudicator} className="w-full md:w-auto bg-blue-600 hover:bg-blue-500 disabled:bg-slate-800 disabled:text-slate-500 disabled:shadow-none text-white px-8 py-3 rounded-xl font-bold transition-all shadow-[0_0_20px_-5px_rgba(37,99,235,0.4)]">
                 {loading ? txStatus : `Fund ${project.budget} USDC`}
               </button>
             </div>

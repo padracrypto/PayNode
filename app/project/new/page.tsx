@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   useAccount,
+  useReadContract,
   useWriteContract,
   useWaitForTransactionReceipt,
   usePublicClient,
@@ -46,6 +47,24 @@ function ProjectForm() {
     arbitratorWallet: '',
   });
   const [useArbitrator, setUseArbitrator] = useState(false);
+
+  // "Automatic" sends `_arbitrator = address(0)`; the signing key is NOT a createProject argument.
+  // It lives in the contract as resolverAt[epoch] and is snapshotted at funding. If the live key
+  // is zero, a project created on the automatic path has no adjudicator at all — block it here
+  // rather than let the user discover it mid-dispute.
+  const {
+    data: liveResolver,
+    isLoading: resolverLoading,
+    isError: resolverError,
+  } = useReadContract({ ...escrowContract, functionName: 'resolverSigner' });
+  const aiAvailable = !!liveResolver && liveResolver !== zeroAddress;
+  const aiBlocked = !useArbitrator && !aiAvailable;
+  const aiBlockedReason = resolverLoading
+    ? 'Checking whether automatic resolution is enabled on-chain…'
+    : resolverError
+      ? 'Could not confirm that automatic resolution is enabled on-chain. Retry, or use a named arbitrator.'
+      : 'Automatic resolution is not enabled on the escrow contract yet (no resolver key is set). ' +
+        'Use a named arbitrator, or wait until the resolver is activated.';
 
   const [localError, setLocalError] = useState('');
   const [isSyncing, setIsSyncing] = useState(false);
@@ -160,6 +179,10 @@ function ProjectForm() {
 
     // Mirrors the contract's SelfDeal() check, so the user gets a sentence instead of a revert.
     let arbitrator: string = zeroAddress;
+    if (aiBlocked) {
+      setLocalError(aiBlockedReason);
+      return;
+    }
     if (useArbitrator) {
       if (!isAddress(formData.arbitratorWallet)) {
         setLocalError('Enter a valid arbitrator address, or switch to automatic resolution.');
@@ -399,6 +422,9 @@ function ProjectForm() {
                   Binding resolution by PayNode&apos;s autonomous AI agent (Gemini), with the option
                   for direct mutual settlement at any time.
                 </p>
+                {!resolverLoading && !aiAvailable && (
+                  <p className="text-amber-400/90 text-xs font-bold mt-2">Currently unavailable</p>
+                )}
               </button>
 
               <button
@@ -414,6 +440,10 @@ function ProjectForm() {
                 </p>
               </button>
             </div>
+
+            {aiBlocked && (
+              <p className="text-xs text-amber-400 font-bold">{aiBlockedReason}</p>
+            )}
 
             {useArbitrator && (
               <div className="space-y-2">
@@ -464,7 +494,7 @@ function ProjectForm() {
             </button>
             <button
               type="submit"
-              disabled={isProcessing || wrongNetwork}
+              disabled={isProcessing || wrongNetwork || aiBlocked}
               className="px-8 py-4 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-800 disabled:text-slate-500 disabled:border disabled:border-slate-700 text-white rounded-xl font-bold transition-all shadow-[0_0_20px_-5px_rgba(37,99,235,0.4)] disabled:shadow-none flex items-center justify-center min-w-[180px]"
             >
               {isProcessing ? (
