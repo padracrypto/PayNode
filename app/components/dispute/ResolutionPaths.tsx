@@ -4,12 +4,12 @@
  * The three routes out of a dispute, rendered for one specific project.
  *
  * ── WHY A COMPONENT AND NOT PROSE ────────────────────────────────────────────
- * Three surfaces have to answer "who decides this, and how fast" about the same escrow: the
- * warning modal before a dispute exists, the page's Disputed block once it does, and the
- * panel's ruling request inside it. Each of them used to carry its own
- * `hasArbitrator ? … : hasResolver ? … : …` paragraph, which is three chances for one screen to
- * offer a route another screen calls closed. `resolutionPaths()` in lib/dispute/types.ts is now
- * the single answer and this is its only renderer.
+ * Two surfaces have to answer "who decides this, and how fast" about the same escrow: the
+ * warning modal before a dispute exists, and <DisputeActionPanel />'s tabs once it does. Each
+ * used to carry its own `hasArbitrator ? … : hasResolver ? … : …` paragraph, which is two
+ * chances for one screen to offer a route another screen calls closed. `resolutionPaths()` in
+ * lib/dispute/types.ts is now the single answer: this renders it as the modal's full cards,
+ * and the action panel renders the same list as tabs.
  *
  * ── CLOSED PATHS ARE STILL SHOWN ─────────────────────────────────────────────
  * A project has exactly one adjudicator, so on every project one of PATH 1 / PATH 2 is closed,
@@ -24,67 +24,26 @@
  */
 
 import * as React from 'react';
-import type { ResolutionPathInfo, ResolutionPathId } from '@/lib/dispute/types';
+import type { ResolutionPathId, ResolutionPathInfo } from '@/lib/dispute/types';
 import { Badge } from './ui';
 
 export type ResolutionPathsProps = {
   paths: ResolutionPathInfo[];
-  /**
-   * The route this dispute is actually travelling right now, if any — a ruling requested, an
-   * offer on the table. Marked "In progress" so the overview agrees with the controls beside
-   * it instead of reading as a menu of things nobody has started.
-   */
-  activePathId?: ResolutionPathId;
-  /** Per-path pointer to where the control for it lives, e.g. "Propose a split below". */
-  hints?: Partial<Record<ResolutionPathId, React.ReactNode>>;
-  /**
-   * Render closed routes as a single line of badges instead of full cards. Used once a dispute
-   * is open, where the reader needs the actionable route in front of them; the reason a route is
-   * closed stays one hover away rather than a paragraph each. The pre-dispute modal keeps the
-   * full cards, since that is where a party decides whether to escalate at all.
-   */
-  collapseClosed?: boolean;
 };
 
-export function ResolutionPaths({ paths, activePathId, hints, collapseClosed }: ResolutionPathsProps) {
-  const shown = collapseClosed ? paths.filter((p) => p.available) : paths;
-  const closed = collapseClosed ? paths.filter((p) => !p.available) : [];
-
+export function ResolutionPaths({ paths }: ResolutionPathsProps) {
   return (
-    <div className="space-y-2">
-      <ul className="space-y-2">
-        {shown.map((path) => (
-          <li key={path.id}>
-            <PathCard path={path} inProgress={path.id === activePathId} hint={hints?.[path.id]} />
-          </li>
-        ))}
-      </ul>
-
-      {closed.length > 0 && (
-        <p className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-          <span>Not available for this project:</span>
-          {closed.map((path) => (
-            <span key={path.id} title={path.closedBecause} className="cursor-help">
-              <Badge tone="neutral">
-                Path {path.pathNumber} · {path.title}
-              </Badge>
-            </span>
-          ))}
-        </p>
-      )}
-    </div>
+    <ul className="space-y-2">
+      {paths.map((path) => (
+        <li key={path.id}>
+          <PathCard path={path} />
+        </li>
+      ))}
+    </ul>
   );
 }
 
-function PathCard({
-  path,
-  inProgress,
-  hint,
-}: {
-  path: ResolutionPathInfo;
-  inProgress: boolean;
-  hint: React.ReactNode;
-}) {
+function PathCard({ path }: { path: ResolutionPathInfo }) {
   const open = path.available;
 
   return (
@@ -111,9 +70,7 @@ function PathCard({
               )}
             </div>
 
-            {inProgress ? (
-              <Badge tone="warn">In progress</Badge>
-            ) : open ? (
+            {open ? (
               <Badge tone="good">Available</Badge>
             ) : (
               <Badge tone="neutral">Not available</Badge>
@@ -139,10 +96,6 @@ function PathCard({
               <Fact term="How fast">{path.facts.speed}</Fact>
               <Fact term="How binding">{path.facts.binding}</Fact>
             </dl>
-          )}
-
-          {open && hint && (
-            <p className="text-xs text-blue-300/90 leading-relaxed mt-3">{hint}</p>
           )}
 
           {/* The contract function, for a party who wants to check the claim rather than take
@@ -173,7 +126,7 @@ function Fact({ term, children }: { term: string; children: React.ReactNode }) {
  * settlement. `aria-hidden` throughout — every one of them is redundant with the title beside
  * it, and announcing "icon" three times adds nothing for a screen reader.
  */
-function PathIcon({ id, muted }: { id: ResolutionPathId; muted: boolean }) {
+export function PathIcon({ id, muted }: { id: ResolutionPathId; muted: boolean }) {
   const d = {
     arbitrator:
       'M12 3v17.25m0 0c-1.472 0-2.882.265-4.185.75M12 20.25c1.472 0 2.882.265 4.185.75M18.75 4.97A48.416 48.416 0 0 0 12 4.5c-2.291 0-4.545.16-6.75.47m13.5 0c1.01.143 2.01.317 3 .52m-3-.52 2.62 10.726c.122.499-.106 1.028-.589 1.202a5.988 5.988 0 0 1-2.031.352 5.988 5.988 0 0 1-2.031-.352c-.483-.174-.711-.703-.59-1.202L18.75 4.971Zm-16.5.52c.99-.203 1.99-.377 3-.52m0 0 2.62 10.726c.122.499-.106 1.028-.589 1.202a5.989 5.989 0 0 1-2.031.352 5.989 5.989 0 0 1-2.031-.352c-.483-.174-.711-.703-.59-1.202L5.25 4.971Z',

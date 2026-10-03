@@ -56,7 +56,7 @@ import {
   type EvidenceFinding,
 } from '@/lib/dispute/types';
 import { SplitMeter } from './SplitMeter';
-import { Alert, Badge, Button, Card, SectionLabel, Spinner, Timestamp, type Tone } from './ui';
+import { Alert, Badge, Button, SectionLabel, Spinner, Timestamp, type Tone } from './ui';
 
 /** How long before the deadline to start warning. Below this, the countdown turns urgent. */
 const EXPIRY_WARNING_SECONDS = 48 * 60 * 60;
@@ -189,7 +189,9 @@ export function VerdictCard({
     !signature;
 
   return (
-    <Card tone="dispute" className="space-y-7">
+    // No card of its own: it renders inside the AI Arbitrator tab of <DisputeActionPanel />,
+    // which is already the bordered surface. A second border there reads as a nested dialog.
+    <div className="space-y-7">
       {/* ------------------------------- header ------------------------------- */}
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div className="min-w-0">
@@ -376,7 +378,7 @@ export function VerdictCard({
       </div>
 
       {/* ---------------------------- provenance ----------------------------- */}
-      <div className="border-t border-slate-800/80 pt-5 grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
+      <div className="border-t border-slate-800/80 pt-5 grid grid-cols-2 gap-4 text-xs">
         <Provenance label="Model" value={resolution.model ?? 'unknown'} mono />
         <Provenance
           label="Resolver epoch"
@@ -394,7 +396,7 @@ export function VerdictCard({
           mono
         />
       </div>
-    </Card>
+    </div>
   );
 }
 

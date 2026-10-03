@@ -34,7 +34,6 @@ import {
 import { useSiwe } from '@/app/providers/SiweProvider';
 import { DisputePanel } from '@/app/components/dispute/DisputePanel';
 import { DisputeWarningModal } from '@/app/components/dispute/DisputeWarningModal';
-import { ResolutionPaths } from '@/app/components/dispute/ResolutionPaths';
 import { resolutionPaths } from '@/lib/dispute/types';
 import type { DeliverableRow, ViewerRole } from '@/lib/dispute/types';
 import { submitRating } from '@/app/actions/rating';
@@ -867,115 +866,18 @@ export default function ProjectPage() {
 
   if (isUnauthorized) return <AccessDenied signedIn={!!authedWallet} />;
 
-  return (
-    <div className="w-full max-w-5xl mx-auto px-6 py-12 space-y-6 relative">
+  const isDisputed = onchain?.status === ProjectStatus.Disputed;
 
-      <DisputeWarningModal
-        open={showDisputeModal}
-        role={viewerRole}
-        delivered={onchain?.status === ProjectStatus.Delivered}
-        hasArbitrator={hasArbitrator}
-        arbitratorLabel={arbitratorLabel}
-        hasResolver={hasResolver}
-        resolverEpoch={onchain?.resolverEpoch}
-        busy={loading && activeAction === 'Disputed'}
-        onConfirm={raiseDispute}
-        onCancel={() => setShowDisputeModal(false)}
-      />
-
-      {showRateModal && canRate && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={closeRateModal}></div>
-          <div role="dialog" aria-modal="true" aria-labelledby="rate-builder-title"
-               className="bg-[#0f172a] border border-slate-800 rounded-3xl p-8 max-w-md w-full relative z-10 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
-            <div className="text-center mb-6">
-              <h3 id="rate-builder-title" className="text-2xl font-black text-white mb-2">Rate the Builder</h3>
-              <p className="text-slate-400 text-sm">
-                This project has concluded. How was your experience working with {builderLabel}?
-              </p>
-            </div>
-
-            <div className="flex justify-center gap-2 mb-6" onMouseLeave={() => setHoveredScore(0)}>
-              {[1, 2, 3, 4, 5].map((n) => (
-                <button key={n} type="button" disabled={ratingBusy}
-                        aria-label={`${n} star${n > 1 ? 's' : ''}`}
-                        onMouseEnter={() => setHoveredScore(n)}
-                        onClick={() => setPickedScore(n)}
-                        className="focus:outline-none transition-transform hover:scale-110 disabled:cursor-not-allowed">
-                  <Star filled={n <= (hoveredScore || pickedScore)} size="w-10 h-10" />
-                </button>
-              ))}
-            </div>
-
-            {ratingError && <p className="text-sm text-red-400 text-center mb-4">{ratingError}</p>}
-
-            <div className="flex gap-3">
-              <button type="button" onClick={closeRateModal} disabled={ratingBusy}
-                      className="flex-1 py-3 px-4 rounded-xl font-bold text-slate-400 hover:text-white hover:bg-slate-800 transition-all text-sm border border-slate-800 disabled:opacity-50">
-                Not now
-              </button>
-              <button type="button" onClick={saveRating} disabled={!pickedScore || ratingBusy}
-                      className="flex-[2] bg-yellow-500 hover:bg-yellow-400 disabled:opacity-50 disabled:cursor-not-allowed text-slate-950 py-3 px-4 rounded-xl font-bold transition-all text-sm">
-                {ratingBusy ? 'Saving…' : 'Submit rating'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showReleaseModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowReleaseModal(false)}></div>
-          <div className="bg-[#0f172a] border border-slate-800 rounded-3xl p-8 max-w-md w-full relative z-10 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
-            <div className="text-center mb-6">
-              <div className="w-16 h-16 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-8 h-8 text-emerald-400"><path fillRule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm3.857-9.809a.75.75 0 0 0-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 1 0-1.06 1.061l2.5 2.5a.75.75 0 0 0 1.137-.089l4-5.5Z" clipRule="evenodd" /></svg>
-              </div>
-              <h3 className="text-2xl font-black text-white mb-2">Approve the work?</h3>
-              <p className="text-slate-400 text-sm">
-                This releases the escrow to {builderLabel}. It cannot be undone. You can rate the builder once it goes through.
-              </p>
-            </div>
-
-            <div className="flex gap-3">
-              <button
-                onClick={() => setShowReleaseModal(false)}
-                className="flex-1 py-3 px-4 rounded-xl font-bold text-slate-400 hover:text-white hover:bg-slate-800 transition-all text-sm border border-slate-800"
-              >
-                Cancel
-              </button>
-              <button 
-                onClick={executeReleaseFunds}
-                className="flex-[2] bg-emerald-600 hover:bg-emerald-500 text-white py-3 px-4 rounded-xl font-bold transition-all shadow-[0_0_15px_rgba(16,185,129,0.3)] text-sm"
-              >
-                Confirm & Release Funds
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div className="bg-[#0f172a]/60 border border-slate-800 rounded-[2rem] p-8 md:p-10 relative overflow-hidden shadow-2xl">
-        
-        <div className="absolute top-0 right-0 bg-[#050B14] px-6 py-3 rounded-bl-2xl border-b border-l border-slate-800/80">
-          <span className={`text-xs font-black tracking-widest uppercase flex items-center gap-2 ${
-            project.status === 'Completed' ? 'text-emerald-400' :
-            onchain?.status === ProjectStatus.Cancelled ? 'text-red-400' :
-            project.status === 'Refunded' ? 'text-orange-500' :
-            onchain?.status === ProjectStatus.Delivered ? 'text-purple-400' :
-            onchain?.status === ProjectStatus.InRevision ? 'text-orange-400' : onchain?.status === ProjectStatus.Disputed ? 'text-amber-400' : 'text-blue-400'
-          }`}>
-            {onchain?.status === ProjectStatus.Funded && <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse"></span>}
-            {onchain?.status === ProjectStatus.AwaitingFunds && <span className="w-2 h-2 rounded-full bg-slate-400 animate-pulse"></span>}
-            {onchain ? STATUS_LABEL[onchain.status] : project.status}
-          </span>
-        </div>
-
+  // The brief and its key facts. Above everything in most states; in a dispute it heads the left
+  // column of <DisputePanel />, beside the action panel, so the thing being judged and the
+  // controls that judge it are on screen together.
+  const overview = (
+      <>
         {/* The brief itself. It was never rendered on this page at all — the client typed it at
             /project/new and nobody, including the arbitrator ruling on the work, could read it
             back. RLS has always permitted it (migration 0001 grants SELECT on the whole row,
             0005 extends that to the arbitrator); only the markup was missing. */}
-        <div className="mb-8 w-3/4">
+        <div className={isDisputed ? 'mb-6' : 'mb-8 w-3/4'}>
           <h1 className="text-3xl font-black text-white leading-tight">{project.title}</h1>
           {project.description && (
             <p className="mt-3 text-sm text-slate-400 leading-relaxed whitespace-pre-wrap">
@@ -984,7 +886,7 @@ export default function ProjectPage() {
           )}
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-10">
+        <div className={`grid gap-4 ${isDisputed ? 'grid-cols-2 sm:grid-cols-3' : 'grid-cols-2 md:grid-cols-3 lg:grid-cols-5 mb-10'}`}>
           <div className="bg-[#050B14] border border-slate-800/80 rounded-2xl p-5">
             <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Builder</p>
             {builderUsername ? (
@@ -1085,9 +987,13 @@ export default function ProjectPage() {
             )}
           </div>
         </div>
+      </>
+  );
 
-        <div className="pt-6 border-t border-slate-800/50">
-
+  // Transaction status and the network guard. In a dispute they sit directly above the action
+  // panel, beside the buttons whose transactions they report on.
+  const notices = (
+    <>
           {banner && (
             <div
               className={`mb-6 p-4 rounded-xl text-sm font-bold border ${
@@ -1118,202 +1024,284 @@ export default function ProjectPage() {
               </button>
             </div>
           )}
+    </>
+  );
 
-          {/* ============================================================
-              DISPUTED — v1 rendered this state with no actions whatsoever,
-              because on-chain there was no way out of it. All four
-              resolution paths are surfaced here.
-              ============================================================ */}
-          {onchain?.status === ProjectStatus.Disputed && (
-            <div className="bg-amber-950/20 border border-amber-900/50 p-5 md:p-6 rounded-3xl space-y-4">
-              {/* The routes out, from the one place that decides them.
-                  `resolutionPaths()` in lib/dispute/types.ts answers this for the warning modal
-                  and for <DisputePanel /> too, so a party cannot be told here that a path is open
-                  and told there that it is closed. The prose ladder this replaces
-                  (`hasArbitrator ? … : hasResolver ? … : …`) was the third copy of that logic.
+  /* ============================================================
+     DISPUTED — the on-chain half of the dispute layout. Each piece is a
+     slot in <DisputePanel />'s action panel; the page keeps building them
+     because every one of them goes through this page's guarded `send()`.
+     Which paths exist at all comes from `disputePaths`, the same
+     `resolutionPaths()` answer the warning modal renders.
+     ============================================================ */
+  const offerIsMine = hasOffer && offer![0].toLowerCase() === address?.toLowerCase();
+  const CTA = 'w-full py-4 rounded-2xl font-black text-base transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none';
 
-                  It sits at the top of this block on purpose: the controls for PATH 1 and PATH 3
-                  are directly below it, and the `hints` point at them by name. PATH 2's control
-                  lives in <DisputePanel /> further down, which is what its hint says. */}
-              <div>
-                <h3 className="text-amber-400 font-black text-lg mb-1">Dispute open</h3>
-                <p className="text-sm text-slate-400">
-                  {isArbitrator ? (
-                    <>
-                      You are the designated arbitrator for this project. Your ruling is final, and
-                      it is the only one that will be issued — automatic resolution is disabled
-                      wherever an arbitrator was named.
-                    </>
-                  ) : (
-                    <>
-                      The escrow is frozen until this is resolved. These are the routes open for
-                      this project.
-                    </>
-                  )}
-                </p>
-              </div>
+  // The split being proposed, as two large numbers over the slider rather than two small labels
+  // under it: the number is the decision, so it is what the eye should land on.
+  const splitPicker = (accent: string) => (
+    <div>
+      <div className="flex items-end justify-between mb-3">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Client refund</p>
+          <p className="text-2xl font-black font-mono text-blue-300">{(10000 - settlementBps) / 100}%</p>
+        </div>
+        <div className="text-right">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Builder paid</p>
+          <p className="text-2xl font-black font-mono text-emerald-400">{settlementBps / 100}%</p>
+        </div>
+      </div>
+      <input type="range" min={0} max={10000} step={500} value={settlementBps}
+             aria-label="Builder's share of the escrow"
+             onChange={(e) => setSettlementBps(Number(e.target.value))}
+             className={`w-full ${accent}`} />
+    </div>
+  );
 
-              <ResolutionPaths
-                paths={disputePaths}
-                collapseClosed
-                activePathId={hasOffer ? 'settlement' : undefined}
-                hints={{
-                  arbitrator: isArbitrator
-                    ? 'This is yours to rule on — the controls are directly below.'
-                    : undefined,
-                  resolver:
-                    'Either of you can ask for this ruling in the Evidence and claims panel below.',
-                  settlement: hasOffer
-                    ? 'An offer is on the table right now — see it below.'
-                    : act?.canProposeSettlement
-                      ? 'Propose a split below. Nothing is committed until the other party accepts.'
-                      : undefined,
-                }}
-              />
+  const settlementControls = !act?.canProposeSettlement ? (
+    <p className="text-sm text-slate-500">
+      {isArbitrator
+        ? 'Only the client and the builder can settle between themselves. Until a ruling lands, they still can.'
+        : 'Only the client and the builder can propose a split.'}
+    </p>
+  ) : hasOffer && offerIsMine ? (
+    <div className="rounded-2xl border border-blue-900/40 bg-blue-950/20 p-4">
+      <p className="text-[10px] font-black uppercase tracking-wider text-blue-300 mb-1">Awaiting their answer</p>
+      <p className="text-white font-bold">
+        {offer![1] / 100}% to the builder · {(10000 - offer![1]) / 100}% to the client
+      </p>
+      <button onClick={withdrawSettlement} disabled={loading}
+              className="mt-3 text-slate-400 hover:text-red-400 text-xs font-bold underline underline-offset-4 disabled:opacity-50">
+        {loading && activeAction === 'OfferWithdrawn' ? txStatus : 'Withdraw offer'}
+      </button>
+    </div>
+  ) : hasOffer ? (
+    <div className="space-y-4">
+      <div className="rounded-2xl border border-emerald-900/40 bg-emerald-950/20 p-4">
+        <p className="text-[10px] font-black uppercase tracking-wider text-emerald-400 mb-1">Offer on the table</p>
+        <p className="text-white font-bold">
+          {offer![1] / 100}% to the builder · {(10000 - offer![1]) / 100}% to the client
+        </p>
+      </div>
 
-              {/* ---- PATH 1: the designated arbitrator's ruling ---- */}
-              {isArbitrator && (
-                <div className="bg-[#050B14] border border-amber-900/50 rounded-2xl p-5">
-                  <p className="text-white font-bold text-sm mb-1">Your ruling</p>
-                  <p className="text-xs text-slate-500 leading-relaxed mb-5">
-                    Read the brief above and any delivered work below before you rule. Whichever you
-                    choose pays out immediately and cannot be revised.
-                  </p>
+      <button onClick={acceptSettlement} disabled={loading}
+              className={`${CTA} bg-emerald-600 hover:bg-emerald-500 text-white shadow-[0_0_28px_-6px_rgba(16,185,129,0.6)]`}>
+        {loading && activeAction === 'Settled' ? txStatus : 'Accept and settle'}
+      </button>
 
-                  <div className="flex flex-col sm:flex-row gap-3">
-                    <button onClick={() => resolveAsArbitrator(10000)} disabled={loading}
-                            className="flex-1 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white py-3 rounded-xl font-bold text-sm transition-all shadow-[0_0_15px_rgba(16,185,129,0.3)]">
-                      {loading ? txStatus : 'Release to Builder'}
-                    </button>
-                    <button onClick={() => resolveAsArbitrator(0)} disabled={loading}
-                            className="flex-1 bg-red-600 hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed text-white py-3 rounded-xl font-bold text-sm transition-all shadow-[0_0_15px_rgba(220,38,38,0.3)]">
-                      {loading ? txStatus : 'Refund to Client'}
-                    </button>
-                  </div>
+      {showCounter ? (
+        <div className="border-t border-slate-800 pt-4 space-y-4">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Your counter-offer</p>
+            <button onClick={() => setShowCounter(false)} disabled={loading}
+                    className="text-slate-500 hover:text-slate-300 text-xs font-bold">
+              Cancel
+            </button>
+          </div>
+          {splitPicker('accent-blue-500')}
+          <button onClick={proposeSettlement}
+                  disabled={loading || settlementBps === offer![1]}
+                  className="w-full bg-slate-800 hover:bg-slate-700 border border-slate-700 disabled:opacity-50 disabled:cursor-not-allowed text-white py-3 rounded-xl font-bold text-sm">
+            {loading && activeAction === 'OfferSent' ? txStatus : 'Send counter-offer'}
+          </button>
+          <p className="text-[11px] text-slate-500 leading-relaxed">
+            Replaces the current offer. They will need to accept your split.
+          </p>
+        </div>
+      ) : (
+        <button onClick={() => { setSettlementBps(offer![1]); setShowCounter(true); }}
+                disabled={loading}
+                className="w-full text-slate-400 hover:text-white text-xs font-bold underline underline-offset-4">
+          Decline &amp; counter-offer
+        </button>
+      )}
+    </div>
+  ) : (
+    <div className="space-y-5">
+      {splitPicker('accent-blue-500')}
+      <button onClick={proposeSettlement} disabled={loading}
+              className={`${CTA} bg-blue-600 hover:bg-blue-500 text-white shadow-[0_0_28px_-6px_rgba(37,99,235,0.6)]`}>
+        {loading && activeAction === 'OfferSent'
+          ? txStatus
+          : `Propose a ${settlementBps / 100}/${(10000 - settlementBps) / 100} split`}
+      </button>
+      <p className="text-xs text-slate-500 text-center -mt-2">Nothing moves until the other party accepts.</p>
+    </div>
+  );
 
-                  <div className="border-t border-amber-900/30 mt-5 pt-5">
-                    <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">
-                      Or split the escrow
-                    </p>
-                    <input type="range" min={0} max={10000} step={100} value={rulingBps}
-                           onChange={(e) => setRulingBps(Number(e.target.value))}
-                           className="w-full accent-amber-500 mb-2" />
-                    <div className="flex justify-between text-xs text-slate-400 mb-4">
-                      <span>Client refunded {(10000 - rulingBps) / 100}%</span>
-                      <span>Builder paid {rulingBps / 100}%</span>
-                    </div>
-                    <button onClick={() => resolveAsArbitrator(rulingBps)} disabled={loading}
-                            className="w-full bg-amber-600 hover:bg-amber-500 disabled:opacity-50 disabled:cursor-not-allowed text-white py-3 rounded-xl font-bold text-sm transition-all">
-                      {loading ? txStatus : `Submit ${rulingBps / 100}/${(10000 - rulingBps) / 100} split`}
-                    </button>
-                  </div>
-                </div>
-              )}
+  // PATH 1. The arbitrator gets the controls; a party gets told who they are waiting on, since
+  // nothing on this path is theirs to press.
+  const arbitratorControls = isArbitrator ? (
+    <div className="space-y-5">
+      <div className="grid grid-cols-2 gap-3">
+        <button onClick={() => resolveAsArbitrator(10000)} disabled={loading}
+                className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white py-3 rounded-xl font-bold text-sm transition-all shadow-[0_0_15px_rgba(16,185,129,0.3)]">
+          {loading ? txStatus : 'Release to builder'}
+        </button>
+        <button onClick={() => resolveAsArbitrator(0)} disabled={loading}
+                className="bg-red-600 hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed text-white py-3 rounded-xl font-bold text-sm transition-all shadow-[0_0_15px_rgba(220,38,38,0.3)]">
+          {loading ? txStatus : 'Refund client'}
+        </button>
+      </div>
 
-              {/* ---- PATH 3: mutual 2-of-2, needs no third party at all ---- */}
-              {act?.canProposeSettlement && (
-                <div className="bg-[#050B14] border border-slate-800 rounded-2xl p-5">
-                  {hasOffer ? (
-                    <>
-                      <p className="text-white font-bold text-sm mb-1">
-                        {offer![0].toLowerCase() === address?.toLowerCase()
-                          ? 'Your offer is awaiting a response'
-                          : 'You have a settlement offer'}
-                      </p>
-                      <p className="text-slate-400 text-sm mb-4">
-                        {offer![1] / 100}% to the builder, {(10000 - offer![1]) / 100}% refunded to the client.
-                      </p>
-                      {offer![0].toLowerCase() === address?.toLowerCase() ? (
-                        <button onClick={withdrawSettlement} disabled={loading}
-                                className="text-slate-400 hover:text-red-400 text-xs font-bold underline underline-offset-4">
-                          Withdraw offer
-                        </button>
-                      ) : (
-                        <>
-                          <button onClick={acceptSettlement} disabled={loading}
-                                  className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white py-3 rounded-xl font-bold text-sm">
-                            {loading && activeAction === 'Settled' ? txStatus : 'Accept and settle'}
-                          </button>
+      <div className="border-t border-amber-900/30 pt-5">
+        <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Or split the escrow</p>
+        <input type="range" min={0} max={10000} step={100} value={rulingBps}
+               aria-label="Builder's share of the escrow"
+               onChange={(e) => setRulingBps(Number(e.target.value))}
+               className="w-full accent-amber-500 mb-2" />
+        <div className="flex justify-between text-xs text-slate-400 mb-4">
+          <span>Client refunded {(10000 - rulingBps) / 100}%</span>
+          <span>Builder paid {rulingBps / 100}%</span>
+        </div>
+        <button onClick={() => resolveAsArbitrator(rulingBps)} disabled={loading}
+                className={`${CTA} bg-amber-600 hover:bg-amber-500 text-white shadow-[0_0_28px_-6px_rgba(217,119,6,0.6)]`}>
+          {loading ? txStatus : `Rule ${rulingBps / 100}/${(10000 - rulingBps) / 100}`}
+        </button>
+        <p className="text-xs text-slate-500 text-center mt-2">
+          Pays out immediately. Read the record on the left first — it cannot be revised.
+        </p>
+      </div>
+    </div>
+  ) : (
+    <p className="text-sm text-slate-400 leading-relaxed">
+      Waiting for <span className="text-white font-bold">{arbitratorLabel}</span> to rule. This path
+      has no deadline — a mutual settlement stays open in the meantime.
+    </p>
+  );
 
-                          {showCounter ? (
-                            <div className="border-t border-slate-800 mt-4 pt-4">
-                              <div className="flex items-center justify-between mb-3">
-                                <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                                  Your counter-offer
-                                </p>
-                                <button onClick={() => setShowCounter(false)} disabled={loading}
-                                        className="text-slate-500 hover:text-slate-300 text-xs font-bold">
-                                  Cancel
-                                </button>
-                              </div>
-                              <input type="range" min={0} max={10000} step={500} value={settlementBps}
-                                     onChange={(e) => setSettlementBps(Number(e.target.value))}
-                                     className="w-full accent-blue-500 mb-2" />
-                              <div className="flex justify-between text-xs text-slate-400 mb-4">
-                                <span>Client {(10000 - settlementBps) / 100}%</span>
-                                <span>Builder {settlementBps / 100}%</span>
-                              </div>
-                              <button onClick={proposeSettlement}
-                                      disabled={loading || settlementBps === offer![1]}
-                                      className="w-full bg-slate-800 hover:bg-slate-700 border border-slate-700 disabled:opacity-50 disabled:cursor-not-allowed text-white py-2.5 rounded-xl font-bold text-sm">
-                                {loading && activeAction === 'OfferSent' ? txStatus : 'Send counter-offer'}
-                              </button>
-                              <p className="text-[11px] text-slate-500 mt-2 leading-relaxed">
-                                Replaces the current offer. The other party will need to accept your split.
-                              </p>
-                            </div>
-                          ) : (
-                            <button onClick={() => { setSettlementBps(offer![1]); setShowCounter(true); }}
-                                    disabled={loading}
-                                    className="w-full mt-3 text-slate-400 hover:text-white text-xs font-bold underline underline-offset-4">
-                              Decline &amp; counter-offer
-                            </button>
-                          )}
-                        </>
-                      )}
-                    </>
-                  ) : (
-                    <>
-                      <p className="text-white font-bold text-sm mb-3">Propose a split</p>
-                      <input type="range" min={0} max={10000} step={500} value={settlementBps}
-                             onChange={(e) => setSettlementBps(Number(e.target.value))}
-                             className="w-full accent-emerald-500 mb-2" />
-                      <div className="flex justify-between text-xs text-slate-400 mb-4">
-                        <span>Client {(10000 - settlementBps) / 100}%</span>
-                        <span>Builder {settlementBps / 100}%</span>
-                      </div>
-                      <button onClick={proposeSettlement} disabled={loading}
-                              className="w-full bg-blue-600 hover:bg-blue-500 text-white py-3 rounded-xl font-bold text-sm">
-                        {loading ? txStatus : 'Send offer'}
-                      </button>
-                    </>
-                  )}
-                </div>
-              )}
+  // PATH 4 — a deadline, not a choice, so it sits under the tabs rather than in them.
+  const backstop = act?.canForceResolve ? (
+    <button onClick={forceResolve} disabled={loading}
+            className="w-full bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white py-3 rounded-xl font-bold text-sm">
+      {loading ? txStatus : onchain?.preDispute === ProjectStatus.Delivered
+        ? 'Force settle — split 50/50'
+        : 'Force settle — full refund to client'}
+    </button>
+  ) : (
+    <p className="text-xs text-slate-500 leading-relaxed">
+      If nobody resolves this, anyone can settle it in{' '}
+      <span className="text-slate-300 font-bold">{formatCountdown(act?.staleAt ?? 0n, chainNow)}</span>{' '}
+      — {onchain?.preDispute === ProjectStatus.Delivered
+        ? 'split 50/50'
+        : 'refunded in full to the client'}.
+    </p>
+  );
 
-              {/* ---- PATH 4: the permissionless deadlock breaker ---- */}
-              <div className="border-t border-amber-900/30 pt-4">
-                {act?.canForceResolve ? (
-                  <button onClick={forceResolve} disabled={loading}
-                          className="w-full bg-amber-600 hover:bg-amber-500 text-white py-3 rounded-xl font-bold text-sm">
-                    {loading ? txStatus : onchain.preDispute === ProjectStatus.Delivered
-                      ? 'Force settle — split 50/50'
-                      : 'Force settle — full refund to client'}
-                  </button>
-                ) : (
-                  <p className="text-xs text-slate-500 leading-relaxed">
-                    If nobody resolves this, anyone can settle it in{' '}
-                    <span className="text-slate-300 font-bold">
-                      {formatCountdown(act?.staleAt ?? 0n, chainNow)}
-                    </span>{' '}
-                    — {onchain.preDispute === ProjectStatus.Delivered
-                      ? 'split 50/50 between both parties'
-                      : 'refunded in full to the client'}.
-                  </p>
-                )}
-              </div>
+  return (
+    <div className={`w-full ${isDisputed ? 'max-w-7xl' : 'max-w-5xl'} mx-auto px-4 sm:px-6 py-12 space-y-6 relative`}>
+
+      <DisputeWarningModal
+        open={showDisputeModal}
+        role={viewerRole}
+        delivered={onchain?.status === ProjectStatus.Delivered}
+        hasArbitrator={hasArbitrator}
+        arbitratorLabel={arbitratorLabel}
+        hasResolver={hasResolver}
+        resolverEpoch={onchain?.resolverEpoch}
+        busy={loading && activeAction === 'Disputed'}
+        onConfirm={raiseDispute}
+        onCancel={() => setShowDisputeModal(false)}
+      />
+
+      {showRateModal && canRate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={closeRateModal}></div>
+          <div role="dialog" aria-modal="true" aria-labelledby="rate-builder-title"
+               className="bg-[#0f172a] border border-slate-800 rounded-3xl p-8 max-w-md w-full relative z-10 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+            <div className="text-center mb-6">
+              <h3 id="rate-builder-title" className="text-2xl font-black text-white mb-2">Rate the Builder</h3>
+              <p className="text-slate-400 text-sm">
+                This project has concluded. How was your experience working with {builderLabel}?
+              </p>
             </div>
-          )}
+
+            <div className="flex justify-center gap-2 mb-6" onMouseLeave={() => setHoveredScore(0)}>
+              {[1, 2, 3, 4, 5].map((n) => (
+                <button key={n} type="button" disabled={ratingBusy}
+                        aria-label={`${n} star${n > 1 ? 's' : ''}`}
+                        onMouseEnter={() => setHoveredScore(n)}
+                        onClick={() => setPickedScore(n)}
+                        className="focus:outline-none transition-transform hover:scale-110 disabled:cursor-not-allowed">
+                  <Star filled={n <= (hoveredScore || pickedScore)} size="w-10 h-10" />
+                </button>
+              ))}
+            </div>
+
+            {ratingError && <p className="text-sm text-red-400 text-center mb-4">{ratingError}</p>}
+
+            <div className="flex gap-3">
+              <button type="button" onClick={closeRateModal} disabled={ratingBusy}
+                      className="flex-1 py-3 px-4 rounded-xl font-bold text-slate-400 hover:text-white hover:bg-slate-800 transition-all text-sm border border-slate-800 disabled:opacity-50">
+                Not now
+              </button>
+              <button type="button" onClick={saveRating} disabled={!pickedScore || ratingBusy}
+                      className="flex-[2] bg-yellow-500 hover:bg-yellow-400 disabled:opacity-50 disabled:cursor-not-allowed text-slate-950 py-3 px-4 rounded-xl font-bold transition-all text-sm">
+                {ratingBusy ? 'Saving…' : 'Submit rating'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showReleaseModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowReleaseModal(false)}></div>
+          <div className="bg-[#0f172a] border border-slate-800 rounded-3xl p-8 max-w-md w-full relative z-10 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+            <div className="text-center mb-6">
+              <div className="w-16 h-16 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-8 h-8 text-emerald-400"><path fillRule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm3.857-9.809a.75.75 0 0 0-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 1 0-1.06 1.061l2.5 2.5a.75.75 0 0 0 1.137-.089l4-5.5Z" clipRule="evenodd" /></svg>
+              </div>
+              <h3 className="text-2xl font-black text-white mb-2">Approve the work?</h3>
+              <p className="text-slate-400 text-sm">
+                This releases the escrow to {builderLabel}. It cannot be undone. You can rate the builder once it goes through.
+              </p>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowReleaseModal(false)}
+                className="flex-1 py-3 px-4 rounded-xl font-bold text-slate-400 hover:text-white hover:bg-slate-800 transition-all text-sm border border-slate-800"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={executeReleaseFunds}
+                className="flex-[2] bg-emerald-600 hover:bg-emerald-500 text-white py-3 px-4 rounded-xl font-bold transition-all shadow-[0_0_15px_rgba(16,185,129,0.3)] text-sm"
+              >
+                Confirm & Release Funds
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* No overflow-hidden in a dispute: it would make this box the sticky action column's scroll
+          container, and the column would scroll away with the page. Its only job is clipping the
+          status chip's corner, and the chip is not shown then. */}
+      <div className={`bg-[#0f172a]/60 border border-slate-800 rounded-[2rem] p-5 sm:p-8 md:p-10 relative shadow-2xl ${isDisputed ? '' : 'overflow-hidden'}`}>
+        
+        {!isDisputed && (
+        <div className="absolute top-0 right-0 bg-[#050B14] px-6 py-3 rounded-bl-2xl border-b border-l border-slate-800/80">
+          <span className={`text-xs font-black tracking-widest uppercase flex items-center gap-2 ${
+            project.status === 'Completed' ? 'text-emerald-400' :
+            onchain?.status === ProjectStatus.Cancelled ? 'text-red-400' :
+            project.status === 'Refunded' ? 'text-orange-500' :
+            onchain?.status === ProjectStatus.Delivered ? 'text-purple-400' :
+            onchain?.status === ProjectStatus.InRevision ? 'text-orange-400' : onchain?.status === ProjectStatus.Disputed ? 'text-amber-400' : 'text-blue-400'
+          }`}>
+            {onchain?.status === ProjectStatus.Funded && <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse"></span>}
+            {onchain?.status === ProjectStatus.AwaitingFunds && <span className="w-2 h-2 rounded-full bg-slate-400 animate-pulse"></span>}
+            {onchain ? STATUS_LABEL[onchain.status] : project.status}
+          </span>
+        </div>
+        )}
+
+        {!isDisputed && overview}
+
+        <div className={isDisputed ? '' : 'pt-6 border-t border-slate-800/50'}>
+
+          {!isDisputed && notices}
 
           {/* ============================================================
               THE DISPUTE-RESOLUTION SURFACE
@@ -1333,7 +1321,6 @@ export default function ProjectPage() {
             projectRowId={project?.id != null ? Number(project.id) : undefined}
             projectId={pid}
             status={onchain?.status}
-            preDisputeStatus={onchain?.preDispute}
             totalWei={onchain?.amount}
             feeBps={onchain?.feeBps}
             revisionsUsed={onchain?.revisionsUsed ?? 0}
@@ -1346,6 +1333,18 @@ export default function ProjectPage() {
             hasResolver={hasResolver}
             expectedSigner={resolverAddr as string | undefined}
             canProposeSettlement={act?.canProposeSettlement ?? false}
+            dispute={isDisputed ? {
+              brief: overview,
+              notices,
+              paths: disputePaths,
+              intro: isArbitrator
+                ? 'You are the designated arbitrator. Your ruling is final and pays out immediately.'
+                : undefined,
+              offerPending: hasOffer,
+              arbitratorControls,
+              settlementControls,
+              backstop,
+            } : undefined}
             canDeliver={act?.canDeliver ?? false}
             canRaiseDispute={act?.canRaiseDispute ?? false}
             txPending={loading}

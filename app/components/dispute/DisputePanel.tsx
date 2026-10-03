@@ -30,12 +30,12 @@ import {
   useRequestResolution,
 } from '@/lib/dispute/hooks';
 import {
-  DISPUTE_WINDOWS,
   deriveDisputeStage,
-  resolverAvailability,
   STAGE_LABEL,
   type DeliverableRow,
   type DisputeStage,
+  type ResolutionPathId,
+  type ResolutionPathInfo,
   type ResolveRequestResponse,
   type ViewerRole,
 } from '@/lib/dispute/types';
@@ -43,9 +43,10 @@ import { ProjectStatus } from '@/lib/paynode';
 import { ClaimCenter } from './ClaimCenter';
 import { DeliverableForm } from './DeliverableForm';
 import { DeliverableHistory } from './DeliverableHistory';
+import { DisputeActionPanel } from './DisputeActionPanel';
 import { SplitMeter } from './SplitMeter';
 import { VerdictCard } from './VerdictCard';
-import { Alert, Badge, Button, Card, PanelHeading, SectionLabel, Spinner } from './ui';
+import { Alert, Badge, Button, Card, PanelHeading, Spinner } from './ui';
 
 export type DisputePanelProps = {
   /** `projects.id` — the Supabase surrogate key the evidence tables reference. */
@@ -54,8 +55,6 @@ export type DisputePanelProps = {
   projectId: bigint | undefined;
 
   status: ProjectStatus | undefined;
-  /** The status captured at `raiseDispute`, for the asymmetric stale outcome. */
-  preDisputeStatus: ProjectStatus | undefined;
   totalWei: bigint | undefined;
   /** The project's SNAPSHOTTED fee. Never the live global fee. */
   feeBps: number | undefined;
@@ -75,6 +74,12 @@ export type DisputePanelProps = {
   /** `deriveActions().canProposeSettlement` — whether PATH 3 is this viewer's to start. */
   canProposeSettlement: boolean;
 
+  /**
+   * The page's half of the disputed layout. While the project is Disputed the panel renders two
+   * columns, and everything on-chain in them arrives here as a slot.
+   */
+  dispute?: DisputeSlots;
+
   /** True when `deriveActions().canDeliver` — the builder may submit right now. */
   canDeliver: boolean;
   /** True when `deriveActions().canRaiseDispute`. */
@@ -90,12 +95,33 @@ export type DisputePanelProps = {
   onChainChanged: () => void;
 };
 
+/**
+ * The ON-CHAIN pieces of an open dispute, built by the page because the page owns the one
+ * guarded `send()` they all go through. The panel only decides where they sit.
+ */
+export type DisputeSlots = {
+  /** Left column, top: the project brief and its key facts. */
+  brief: React.ReactNode;
+  /** Above the action panel: transaction status, the wrong-network guard. */
+  notices?: React.ReactNode;
+  /** `resolutionPaths()` for this project — one tab per open path. */
+  paths: ResolutionPathInfo[];
+  intro?: React.ReactNode;
+  /** An unanswered settlement offer exists. Opens on that tab and marks it live. */
+  offerPending: boolean;
+  /** PATH 1 — the arbitrator's ruling controls, or a waiting note for the parties. */
+  arbitratorControls?: React.ReactNode;
+  /** PATH 3 — propose, accept, counter, withdraw. */
+  settlementControls?: React.ReactNode;
+  /** PATH 4 — the 30-day countdown, or the button once it has passed. */
+  backstop?: React.ReactNode;
+};
+
 export function DisputePanel(props: DisputePanelProps) {
   const {
     projectRowId,
     projectId,
     status,
-    preDisputeStatus,
     totalWei,
     feeBps,
     revisionsUsed,
@@ -108,6 +134,7 @@ export function DisputePanel(props: DisputePanelProps) {
     hasResolver,
     expectedSigner,
     canProposeSettlement,
+    dispute,
     canDeliver,
     canRaiseDispute,
     txPending,
@@ -157,9 +184,10 @@ export function DisputePanel(props: DisputePanelProps) {
     if (resolution && resolution.status !== 'pending') setRequestInFlight(false);
   }, [resolution]);
 
-  // Whether PATH 2 is open. Why it is closed, when it is, is the page's Dispute open block's to
-  // say — it renders `resolutionPaths()` once for the whole screen.
-  const availability = resolverAvailability({ status, hasArbitrator, hasResolver });
+  // The tab the viewer picked. Null until they pick one, so the default can follow the dispute:
+  // an offer arriving moves an untouched panel to the settlement tab, but never pulls a viewer
+  // away from a tab they chose.
+  const [tab, setTab] = React.useState<ResolutionPathId | null>(null);
 
   const requestRuling = async () => {
     if (projectId === undefined) return;
@@ -187,15 +215,140 @@ export function DisputePanel(props: DisputePanelProps) {
 
   const settled = stage === 'settled';
   const disputed = status === ProjectStatus.Disputed;
-  const deliveredBeforeDispute = preDisputeStatus === ProjectStatus.Delivered;
   // Someone who will actually read the case file: the named arbitrator (PATH 1) or the AI
   // resolver (PATH 2). With neither, mutual settlement is the only route and a statement has no
   // reader, so the evidence box is not offered at all.
   const hasAdjudicator = hasArbitrator || hasResolver;
 
+  const openPaths = dispute?.paths.filter((p) => p.available) ?? [];
+  const activeTab: ResolutionPathId =
+    (tab && openPaths.some((p) => p.id === tab) ? tab : null) ??
+    (dispute?.offerPending ? 'settlement' : (openPaths[0]?.id ?? 'settlement'));
+
+  const resolverControls = (
+    <ResolverControls
+      stage={stage}
+      role={role}
+      requesting={request.isPending}
+      onRequest={requestRuling}
+      outcome={requestOutcome}
+      onDismissOutcome={() => setRequestOutcome(null)}
+      error={request.error}
+      declinedReason={resolution?.error ?? null}
+      canSettleInstead={canProposeSettlement}
+      onSettleInstead={() => setTab('settlement')}
+      verdict={
+        resolution &&
+        projectId !== undefined && (
+          <VerdictCard
+            resolution={resolution}
+            projectId={projectId}
+            totalWei={totalWei}
+            feeBps={feeBps}
+            expectedSigner={expectedSigner}
+            chainNow={chainNow}
+            clientLabel={clientLabel}
+            builderLabel={builderLabel}
+            guardNetwork={guardNetwork}
+            onSettled={() => {
+              invalidate();
+              onChainChanged();
+            }}
+          />
+        )
+      }
+    />
+  );
+
+  /* ---- Pieces shared by both layouts ---- */
+
+  // The history is shown from the first submission onward and never hidden again — not when a
+  // dispute opens, not after it settles. Blanking the record of the work at the moment it is
+  // being judged is the failure the page already documents for the legacy fields.
+  //
+  // "Submission record", not "Delivered work" — the page keeps its own "Delivered Work" card,
+  // which holds the client's approve/revise actions and the builder's force release. Two
+  // headings with the same words, one above the other, read as a bug.
+  const submissionRecord = stage !== 'active' && (
+    <Card>
+      <PanelHeading
+        title="Submission record"
+        subtitle="Every deliverable, oldest first."
+        right={<Badge tone="neutral">{STAGE_LABEL[stage]}</Badge>}
+      />
+      <DeliverableHistory
+        projectRowId={projectRowId}
+        stage={stage}
+        emptyHint={
+          disputed && hasAdjudicator
+            ? 'The builder submitted no deliverables. Work never delivered earns nothing under delivery-against-scope, however much effort is described.'
+            : 'Nothing has been submitted yet.'
+        }
+      />
+    </Card>
+  );
+
+  /* ===================== DISPUTED: TWO COLUMNS ===================== */
+  // Left: what is being judged — the brief, the submissions, the statements. Right: what the
+  // viewer can do about it, sticky so the call to action stays in view while they read the
+  // record. On a phone the action panel slots in straight after the brief, before the long
+  // record, so the reader learns what is at stake and what they can do before scrolling.
+  if (disputed && dispute) {
+    return (
+      <div className="grid gap-y-4 gap-x-8 lg:grid-cols-[minmax(0,1fr)_400px] xl:grid-cols-[minmax(0,1fr)_440px] lg:grid-rows-[auto_auto_1fr]">
+        <div className="min-w-0 lg:col-start-1 self-start">{dispute.brief}</div>
+
+        <aside className="min-w-0 lg:col-start-2 lg:row-start-1 lg:row-span-3">
+          <div className="space-y-4 lg:sticky lg:top-6">
+            {dispute.notices}
+            <DisputeActionPanel
+              paths={dispute.paths}
+              tab={activeTab}
+              onTabChange={setTab}
+              intro={dispute.intro}
+              liveTab={dispute.offerPending ? 'settlement' : stage === 'arbitrating' ? 'resolver' : undefined}
+              content={{
+                arbitrator: dispute.arbitratorControls,
+                resolver: resolverControls,
+                settlement: dispute.settlementControls,
+              }}
+              footer={dispute.backstop}
+            />
+          </div>
+        </aside>
+
+        <div className="min-w-0 lg:col-start-1 self-start">{submissionRecord}</div>
+
+        {hasAdjudicator && (
+          <div className="min-w-0 lg:col-start-1 self-start">
+            <Card tone="dispute">
+              <PanelHeading
+                title="Evidence and claims"
+                subtitle="Optional. The brief, timeline and deliverables carry the most weight; statements cannot change the original scope."
+                right={<Badge tone="warn">{STAGE_LABEL[stage]}</Badge>}
+              />
+              <ClaimCenter
+                projectRowId={projectRowId}
+                stage={stage}
+                role={role}
+                wallet={wallet}
+                clientLabel={clientLabel}
+                builderLabel={builderLabel}
+                // The record closes once a ruling exists. Filing after the arbitrator has
+                // already read the case file would put a statement on the record that
+                // demonstrably did not inform the outcome, which is worse than not offering it.
+                canFile={stage === 'evidence_open' || stage === 'arbitrating'}
+              />
+            </Card>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  /* ===================== EVERY OTHER STAGE: ONE COLUMN ===================== */
   return (
     <div className="space-y-4">
-      {/* ===================== 1. DELIVERABLES ===================== */}
       {canDeliver && role === 'builder' && wallet && (
         <Card>
           <DeliverableForm
@@ -208,191 +361,8 @@ export function DisputePanel(props: DisputePanelProps) {
         </Card>
       )}
 
-      {/* The history is shown from the first submission onward and never hidden again — not when
-          a dispute opens, not after it settles. Blanking the record of the work at the moment
-          it is being judged is the failure the page already documents for the legacy fields. */}
-      {stage !== 'active' && (
-        <Card>
-          {/* "Submission record", not "Delivered work" — the page keeps its own "Delivered Work"
-              card below, which holds the client's approve/revise actions and the builder's force
-              release. Two headings with the same words, one above the other, read as a bug. */}
-          <PanelHeading
-            title="Submission record"
-            subtitle="Every deliverable on record, oldest first — the same order the arbitrator reads them in."
-            right={<Badge tone="neutral">{STAGE_LABEL[stage]}</Badge>}
-          />
-          <DeliverableHistory
-            projectRowId={projectRowId}
-            stage={stage}
-            emptyHint={
-              disputed && hasAdjudicator
-                ? 'The builder submitted no deliverables. The arbitrator will weigh that against them under delivery-against-scope — work never delivered earns nothing, however much effort is described.'
-                : 'Nothing has been submitted yet.'
-            }
-          />
-        </Card>
-      )}
+      {submissionRecord}
 
-      {/* ===================== 2. THE DISPUTE ===================== */}
-      {disputed && hasAdjudicator && (
-        <Card tone="dispute" className="space-y-4">
-          <PanelHeading
-            title="Evidence and claims"
-            subtitle={
-              <>
-                Filing a statement is optional. The AI resolver evaluates the immutable project
-                brief, on-chain timeline, and submitted deliverables as the primary ground truth.
-                Statements are cross-checked against deliverables to identify specific grievances
-                and cannot alter original scope requirements.
-              </>
-            }
-            right={<Badge tone="warn">{STAGE_LABEL[stage]}</Badge>}
-          />
-
-          <ClaimCenter
-            projectRowId={projectRowId}
-            stage={stage}
-            role={role}
-            wallet={wallet}
-            clientLabel={clientLabel}
-            builderLabel={builderLabel}
-            // The record closes once a ruling exists. Filing after the arbitrator has already read
-            // the case file would put a statement on the record that demonstrably did not inform
-            // the outcome, which is worse than not offering it.
-            canFile={stage === 'evidence_open' || stage === 'arbitrating'}
-          />
-
-          {/* ---- Requesting a ruling (PATH 2) ----
-              Rendered only when PATH 2 is actually open. When it is closed, the Dispute open
-              block above already says so in its closed-path badges, and a second banner here
-              restated the same thing below the form. */}
-          {(stage === 'evidence_open' || stage === 'arbitrating') && availability.available && (
-            <div className="border-t border-amber-900/30 pt-4">
-              {stage === 'arbitrating' ? (
-                <div className="bg-[#0f172a] border border-amber-900/40 rounded-2xl p-5">
-                  <div className="flex items-center gap-3">
-                    <Spinner className="w-5 h-5" />
-                    <div>
-                      <p className="text-white font-bold text-sm">Arbitration in progress</p>
-                      <p className="text-xs text-slate-500 mt-0.5">
-                        This usually takes under two minutes. The ruling will appear here on its
-                        own — you can close this page.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="bg-[#0f172a] border border-slate-800/80 rounded-2xl p-5">
-                  <div className="flex items-start justify-between gap-3 flex-wrap">
-                    <SectionLabel>Ask for a ruling</SectionLabel>
-                    {/* Named, and numbered against the contract, so the button is recognisably
-                        the path the list above calls available rather than an unrelated action. */}
-                    <Badge tone="good">Path 2 · Automatic AI arbitrator</Badge>
-                  </div>
-                  <p className="text-sm text-slate-400 leading-relaxed mt-2 mb-4">
-                    The arbitrator will read the brief, every deliverable, the blockchain timeline
-                    and both statements, then divide the escrow. It rules{' '}
-                    <span className="text-white font-bold">once</span> — the result is stored
-                    permanently, is binding, and cannot be re-requested for a different number.
-                  </p>
-
-                  {(role === 'client' || role === 'builder') && (
-                    <Button
-                      tone="dispute"
-                      className="w-full"
-                      busy={request.isPending}
-                      busyLabel="Preparing the ruling…"
-                      onClick={requestRuling}
-                    >
-                      Request a binding ruling
-                    </Button>
-                  )}
-
-                  {/* The exit from this path, stated where the irreversible button is rather than
-                      only in the overview. A party about to spend their one ruling should be able
-                      to see that a split they both choose is still available and still instant. */}
-                  {canProposeSettlement && (
-                    <p className="text-xs text-slate-500 leading-relaxed mt-3">
-                      Prefer to keep control of the number? Path 3, a mutual settlement, stays open
-                      until the moment a ruling lands — propose a split in the Dispute open panel above
-                      and it pays out as soon as the other party accepts.
-                    </p>
-                  )}
-
-                  {requestOutcome && (
-                    <div className="mt-4">
-                      <RequestOutcomeNotice
-                        outcome={requestOutcome}
-                        onDismiss={() => setRequestOutcome(null)}
-                      />
-                    </div>
-                  )}
-
-                  {request.error && (
-                    <div className="mt-4">
-                      <Alert tone="danger" label="Request failed">
-                        {request.error instanceof Error
-                          ? request.error.message
-                          : 'Could not reach the resolver service.'}
-                      </Alert>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* The 30-day breaker (PATH 4) is deliberately NOT restated here. The page's own
-              resolution block above already counts it down and owns the button that fires it,
-              and a second near-identical sentence about thirty days on the same screen just
-              makes both look less authoritative. The verdict card's expiry copy is about the
-              attestation's own deadline, which is a different clock entirely. */}
-        </Card>
-      )}
-
-      {/* ===================== 3. THE VERDICT ===================== */}
-      {(stage === 'ruling_ready' || stage === 'ruling_expired') && resolution && projectId !== undefined && (
-        <VerdictCard
-          resolution={resolution}
-          projectId={projectId}
-          totalWei={totalWei}
-          feeBps={feeBps}
-          expectedSigner={expectedSigner}
-          chainNow={chainNow}
-          clientLabel={clientLabel}
-          builderLabel={builderLabel}
-          guardNetwork={guardNetwork}
-          onSettled={() => {
-            invalidate();
-            onChainChanged();
-          }}
-        />
-      )}
-
-      {stage === 'ruling_failed' && resolution && (
-        <Card tone="danger">
-          <PanelHeading
-            title="No ruling was issued"
-            subtitle="The arbitrator declined to rule on this dispute."
-            right={<Badge tone="danger">Declined</Badge>}
-          />
-          <Alert tone="danger" label="Why">
-            {resolution.error ??
-              'The resolver could not reach a ruling it was willing to sign on this record.'}
-          </Alert>
-          <p className="text-sm text-slate-400 leading-relaxed mt-4">
-            Retrying will not help — a declined ruling is recorded permanently and re-requesting
-            returns the same answer. Path 2 is closed for this project from here on. What remains
-            is <span className="text-slate-200 font-bold">Path 3, a mutual settlement</span>: agree
-            a percentage split with the other party in the Dispute open panel above and it pays out on
-            acceptance. Failing that, the {DISPUTE_WINDOWS.staleDays}-day timeout lets anyone close
-            the dispute{' '}
-            {deliveredBeforeDispute ? 'with a 50/50 split' : 'with a full refund to the client'}.
-          </p>
-        </Card>
-      )}
-
-      {/* ===================== 4. SETTLED, VIA ARBITRATION ===================== */}
       {/* Only when there IS a stored ruling. A project settled by mutual agreement or by the
           30-day breaker has no attestation behind it, and the page's own "Dispute resolved"
           card — driven by the indexer's `resolution_path` — is the right place for those. */}
@@ -414,7 +384,6 @@ export function DisputePanel(props: DisputePanelProps) {
         </Card>
       )}
 
-      {/* ===================== 5. ESCALATION ===================== */}
       {canRaiseDispute && !disputed && !settled && (
         <div className="text-center">
           <button
@@ -426,6 +395,112 @@ export function DisputePanel(props: DisputePanelProps) {
             Something wrong? Open a dispute
           </button>
         </div>
+      )}
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/*                              THE AI TAB'S BODY                             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * What the AI Arbitrator tab shows at each stage of PATH 2. One component so the tab has
+ * exactly one body at a time: the request button, the wait, the verdict, or the refusal.
+ */
+function ResolverControls({
+  stage,
+  role,
+  requesting,
+  onRequest,
+  outcome,
+  onDismissOutcome,
+  error,
+  verdict,
+  declinedReason,
+  canSettleInstead,
+  onSettleInstead,
+}: {
+  stage: DisputeStage;
+  role: ViewerRole;
+  requesting: boolean;
+  onRequest: () => void;
+  outcome: ResolveRequestResponse | null;
+  onDismissOutcome: () => void;
+  error: unknown;
+  verdict: React.ReactNode;
+  declinedReason: string | null;
+  canSettleInstead: boolean;
+  onSettleInstead: () => void;
+}) {
+  if (stage === 'ruling_ready' || stage === 'ruling_expired') return <>{verdict}</>;
+
+  if (stage === 'ruling_failed') {
+    return (
+      <div className="space-y-4">
+        <Alert tone="danger" label="No ruling issued">
+          {declinedReason ??
+            'The resolver could not reach a ruling it was willing to sign on this record.'}
+        </Alert>
+        <p className="text-xs text-slate-500 leading-relaxed">
+          A declined ruling is permanent — retrying returns the same answer.
+        </p>
+        {canSettleInstead && (
+          <Button tone="primary" className="w-full" onClick={onSettleInstead}>
+            Propose a split instead
+          </Button>
+        )}
+      </div>
+    );
+  }
+
+  if (stage === 'arbitrating') {
+    return (
+      <div className="flex items-center gap-3 rounded-2xl border border-violet-500/30 bg-violet-500/5 p-4">
+        <Spinner className="w-5 h-5" />
+        <div>
+          <p className="text-white font-bold text-sm">Arbitration in progress</p>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Usually under two minutes. The ruling appears here on its own — you can close this page.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  const isParty = role === 'client' || role === 'builder';
+
+  return (
+    <div className="space-y-3">
+      {isParty ? (
+        <button
+          type="button"
+          onClick={onRequest}
+          disabled={requesting}
+          aria-busy={requesting || undefined}
+          className="group relative w-full overflow-hidden rounded-2xl px-5 py-4 text-base font-black text-white transition-all bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 shadow-[0_0_32px_-8px_rgba(139,92,246,0.7)] disabled:opacity-60 disabled:cursor-not-allowed"
+        >
+          <span className="relative flex items-center justify-center gap-2">
+            {requesting && <Spinner className="w-4 h-4 border-white/30 border-t-white" />}
+            {requesting ? 'Preparing the ruling…' : 'Request a binding ruling'}
+          </span>
+        </button>
+      ) : (
+        <p className="text-sm text-slate-500">Only the client or the builder can request a ruling.</p>
+      )}
+
+      {isParty && (
+        <p className="text-xs text-slate-500 leading-relaxed text-center">
+          One ruling per project. It cannot be appealed or re-requested.
+        </p>
+      )}
+
+      {outcome && <RequestOutcomeNotice outcome={outcome} onDismiss={onDismissOutcome} />}
+
+      {error != null && (
+        <Alert tone="danger" label="Request failed">
+          {error instanceof Error ? error.message : 'Could not reach the resolver service.'}
+        </Alert>
       )}
     </div>
   );
