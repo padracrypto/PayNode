@@ -22,6 +22,7 @@ import {
   describeTxError,
 } from '@/lib/paynode';
 import { useSiwe, RequireSiwe } from '@/app/providers/SiweProvider';
+import { PathTag } from '@/app/components/dispute/ResolutionPaths';
 
 function ProjectForm() {
   const router = useRouter();
@@ -413,10 +414,19 @@ function ProjectForm() {
               <button
                 type="button"
                 onClick={() => setUseArbitrator(false)}
-                className={`p-4 rounded-xl border text-left transition-all ${
-                  !useArbitrator ? 'border-blue-500/50 bg-blue-950/20' : 'border-slate-700/50 bg-[#050B14] hover:border-slate-600'
+                // Same signature as the AI tab in <DisputeActionPanel />: a drifting violet→cyan
+                // ring over dark glass, dimmed until the card is chosen.
+                className={`relative p-4 rounded-xl border border-transparent text-left transition-all ${
+                  !useArbitrator
+                    ? 'bg-gradient-to-br from-violet-500/[0.14] to-cyan-400/[0.06] backdrop-blur-md shadow-[0_0_28px_-8px_rgba(139,92,246,0.6),0_0_18px_-10px_rgba(34,211,238,0.6),inset_0_1px_0_rgba(255,255,255,0.06)]'
+                    : 'bg-[#050B14] hover:bg-violet-500/[0.04]'
                 }`}
               >
+                <span className={`ai-ring transition-opacity ${!useArbitrator ? 'opacity-100' : 'opacity-25'}`} />
+                <span className="flex items-center gap-1.5 mb-2">
+                  <PathTag id="resolver" className={!useArbitrator ? 'text-cyan-200' : 'text-cyan-400/60'} />
+                  <span className={`ai-dot ${!useArbitrator ? '' : 'opacity-50'}`} aria-hidden />
+                </span>
                 <p className="text-white font-bold text-sm mb-1">Automatic (AI Resolver)</p>
                 <p className="text-slate-400 text-xs">
                   Binding resolution by PayNode&apos;s autonomous AI agent (Gemini), with the option
@@ -434,6 +444,9 @@ function ProjectForm() {
                   useArbitrator ? 'border-blue-500/50 bg-blue-950/20' : 'border-slate-700/50 bg-[#050B14] hover:border-slate-600'
                 }`}
               >
+                <span className="flex items-center mb-2">
+                  <PathTag id="arbitrator" className={useArbitrator ? 'text-slate-200' : 'text-slate-500'} />
+                </span>
                 <p className="text-white font-bold text-sm mb-1">Named arbitrator</p>
                 <p className="text-slate-400 text-xs">
                   A third party you both trust decides. Recommended for high-value work.
@@ -464,8 +477,8 @@ function ProjectForm() {
             {/* These are terms of the agreement. Users should read them before signing, not
                 discover them on day 30. */}
             <p className="text-xs text-slate-500 leading-relaxed">
-              Either way, you and the builder keep the right to settle directly by mutual agreement
-              at any point before the AI resolver or your named arbitrator rules. If a dispute goes
+              Either way, you and the builder keep the right to settle directly by mutual agreement{' '}
+              <PathTag id="settlement" className="text-slate-400 align-[1px]" /> at any point before the AI resolver or your named arbitrator rules. If a dispute goes
               unresolved for 30 days, anyone can settle it: funds split 50/50 if work was delivered,
               or return to you in full if it never was.
             </p>
