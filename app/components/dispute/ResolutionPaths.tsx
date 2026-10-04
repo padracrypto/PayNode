@@ -57,7 +57,12 @@ function PathCard({ path }: { path: ResolutionPathInfo }) {
       }`}
     >
       <div className="flex items-start gap-3">
-        <PathIcon id={path.id} muted={!open} />
+        <div className="w-14 shrink-0 pt-1">
+          <PathTag
+            id={path.id}
+            className={!open ? 'text-slate-600' : path.id === 'resolver' ? 'text-cyan-300' : 'text-slate-300'}
+          />
+        </div>
 
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-3 flex-wrap">
@@ -121,37 +126,28 @@ function Fact({ term, children }: { term: string; children: React.ReactNode }) {
 }
 
 /**
- * One glyph per route, so the list is scannable before it is read: a gavel-ish scale for the
- * human arbitrator, a chip for the automatic one, a handshake-ish pair of arrows for a mutual
- * settlement. `aria-hidden` throughout — every one of them is redundant with the title beside
- * it, and announcing "icon" three times adds nothing for a screen reader.
+ * Each route's mark is a code-style tag rather than a picture — `[ 3RD ]` for the named human
+ * arbitrator, `[ AI ]` for the automatic one, `[ P2P ]` for a mutual settlement. Pictograms
+ * (gavels, chips, handshakes) read as stickers on a screen that is moving money; a monospace
+ * tag reads as a protocol label and still makes the list scannable before it is read. Colour
+ * comes from the caller via `currentColor`, so one tag serves open, closed and selected states.
+ * `aria-hidden`: it is redundant with the title beside it.
  */
-export function PathIcon({ id, muted }: { id: ResolutionPathId; muted: boolean }) {
-  const d = {
-    arbitrator:
-      'M12 3v17.25m0 0c-1.472 0-2.882.265-4.185.75M12 20.25c1.472 0 2.882.265 4.185.75M18.75 4.97A48.416 48.416 0 0 0 12 4.5c-2.291 0-4.545.16-6.75.47m13.5 0c1.01.143 2.01.317 3 .52m-3-.52 2.62 10.726c.122.499-.106 1.028-.589 1.202a5.988 5.988 0 0 1-2.031.352 5.988 5.988 0 0 1-2.031-.352c-.483-.174-.711-.703-.59-1.202L18.75 4.971Zm-16.5.52c.99-.203 1.99-.377 3-.52m0 0 2.62 10.726c.122.499-.106 1.028-.589 1.202a5.989 5.989 0 0 1-2.031.352 5.989 5.989 0 0 1-2.031-.352c-.483-.174-.711-.703-.59-1.202L5.25 4.971Z',
-    resolver:
-      'M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 0 0 2.25-2.25V6.75a2.25 2.25 0 0 0-2.25-2.25H6.75A2.25 2.25 0 0 0 4.5 6.75v10.5a2.25 2.25 0 0 0 2.25 2.25Zm.75-12h9v9h-9v-9Z',
-    settlement:
-      'M7.5 21 3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5',
-  }[id];
+const PATH_TAG: Record<ResolutionPathId, string> = {
+  arbitrator: '3RD',
+  resolver: 'AI',
+  settlement: 'P2P',
+};
 
+export function PathTag({ id, className = '' }: { id: ResolutionPathId; className?: string }) {
   return (
-    <div
-      className={`w-9 h-9 shrink-0 rounded-xl border flex items-center justify-center ${
-        muted ? 'bg-slate-500/5 border-slate-800/60' : 'bg-slate-500/10 border-slate-700/60'
-      }`}
+    <span
+      aria-hidden="true"
+      className={`inline-flex items-center whitespace-pre font-mono text-[10px] font-bold leading-none tracking-[0.12em] ${className}`}
     >
-      <svg
-        fill="none"
-        viewBox="0 0 24 24"
-        strokeWidth={1.5}
-        stroke="currentColor"
-        aria-hidden="true"
-        className={`w-5 h-5 ${muted ? 'text-slate-600' : 'text-slate-300'}`}
-      >
-        <path strokeLinecap="round" strokeLinejoin="round" d={d} />
-      </svg>
-    </div>
+      <span className="opacity-40">[ </span>
+      {PATH_TAG[id]}
+      <span className="opacity-40"> ]</span>
+    </span>
   );
 }

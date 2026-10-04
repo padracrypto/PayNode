@@ -8,3 +8,46 @@ html, body {
   min-height: 100vh;
   overflow-x: hidden;
 }
+/*
+ * The AI arbitration route's signature, kept in plain CSS because the mask trick below
+ * has no Tailwind utility. Everything here stops under prefers-reduced-motion.
+ */
+@layer components {
+  /* A 1px violet→cyan ring that drifts slowly. The two masks cancel everywhere except
+     the padding box, so only the border paints and the glass behind it shows through. */
+  .ai-ring {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    pointer-events: none;
+    background: linear-gradient(90deg, #8b5cf6, #22d3ee, #8b5cf6) 0 0 / 200% 100%;
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    animation: ai-ring-flow 6s linear infinite;
+  }
+
+  /* A status light, not a ping: the glow breathes so it never competes with the amber
+     "activity" ping that marks a tab needing attention. */
+  .ai-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 9999px;
+    background: #67e8f9;
+    box-shadow: 0 0 4px 1px rgba(34, 211, 238, 0.6);
+    animation: ai-dot-breathe 2.4s ease-in-out infinite;
+  }
+
+  @keyframes ai-ring-flow {
+    to { background-position: 200% 0; }
+  }
+
+  @keyframes ai-dot-breathe {
+    50% { box-shadow: 0 0 10px 3px rgba(139, 92, 246, 0.55); background: #a5f3fc; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ai-ring, .ai-dot { animation: none; }
+  }
+}

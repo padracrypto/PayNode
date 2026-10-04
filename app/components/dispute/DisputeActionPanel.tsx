@@ -24,7 +24,7 @@
 
 import * as React from 'react';
 import type { ResolutionPathId, ResolutionPathInfo } from '@/lib/dispute/types';
-import { PathIcon } from './ResolutionPaths';
+import { PathTag } from './ResolutionPaths';
 import { ResolverRubric } from './ResolverRubric';
 import { Badge } from './ui';
 
@@ -46,7 +46,7 @@ export type DisputeActionPanelProps = {
 const TAB_LABEL: Record<ResolutionPathId, string> = {
   arbitrator: 'Arbitrator',
   resolver: 'AI Arbitrator',
-  settlement: 'Mutual Settlement',
+  settlement: 'Settlement',
 };
 
 export function DisputeActionPanel({
@@ -115,16 +115,26 @@ export function DisputeActionPanel({
                   aria-controls={`dispute-tabpanel-${p.id}`}
                   tabIndex={selected ? 0 : -1}
                   onClick={() => onTabChange(p.id)}
-                  className={`relative flex items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-xs sm:text-sm font-bold transition-all outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60 ${
+                  className={`relative flex flex-col items-center justify-center gap-1.5 rounded-xl px-3 py-2.5 text-xs sm:text-sm font-bold transition-all outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60 ${
                     selected
                       ? ai
-                        ? 'bg-gradient-to-br from-violet-600/25 to-cyan-500/10 text-white ring-1 ring-violet-400/40 shadow-[0_0_24px_-6px_rgba(139,92,246,0.55)]'
+                        ? // Dark glass under the drifting ring: translucent tint, blur, a hairline
+                          // top highlight, and a violet/cyan bloom outside.
+                          'bg-gradient-to-br from-violet-500/[0.14] to-cyan-400/[0.06] backdrop-blur-md text-white shadow-[0_0_28px_-8px_rgba(139,92,246,0.6),0_0_18px_-10px_rgba(34,211,238,0.6),inset_0_1px_0_rgba(255,255,255,0.06)]'
                         : 'bg-[#050B14] text-white ring-1 ring-slate-700'
                       : 'text-slate-500 hover:text-slate-200 hover:bg-slate-800/40'
                   }`}
                 >
-                  {ai ? <AiGlyph size="sm" glow={selected} /> : null}
-                  <span className="truncate">{TAB_LABEL[p.id]}</span>
+                  {ai && <span className={`ai-ring transition-opacity ${selected ? 'opacity-100' : 'opacity-25'}`} />}
+                  <span className="flex items-center gap-1.5">
+                    <PathTag id={p.id} className={ai ? (selected ? 'text-cyan-200' : 'text-cyan-400/60') : undefined} />
+                    {ai && <span className={`ai-dot ${selected ? '' : 'opacity-50'}`} aria-hidden />}
+                  </span>
+                  <span className="truncate max-w-full">{TAB_LABEL[p.id]}</span>
+                  {/* A sharp hairline marks the selected human route; the AI route has its ring. */}
+                  {selected && !ai && (
+                    <span className="absolute bottom-0 left-1/2 -translate-x-1/2 h-px w-8 bg-gradient-to-r from-transparent via-slate-300 to-transparent" aria-hidden />
+                  )}
                   {liveTab === p.id && (
                     <span className="absolute top-1.5 right-1.5 flex w-2 h-2" aria-label="Activity">
                       <span className="absolute inset-0 rounded-full bg-amber-400 opacity-75 motion-safe:animate-ping" />
@@ -145,9 +155,9 @@ export function DisputeActionPanel({
           aria-labelledby={open.length > 1 ? `dispute-tab-${active.id}` : undefined}
           className="p-5 md:p-6 pt-5 md:pt-5 space-y-5"
         >
-          <div className="flex items-start gap-3">
-            {active.id === 'resolver' ? <AiGlyph /> : <PathIcon id={active.id} muted={false} />}
-            <div className="min-w-0 flex-1">
+          <div>
+            <PathRule id={active.id} pathNumber={active.pathNumber} />
+            <div className="min-w-0 mt-3">
               <div className="flex items-center gap-2 flex-wrap">
                 <h3 className="text-white font-black text-base leading-tight">{active.title}</h3>
                 {active.id === 'resolver' && <Badge tone="info">Binding</Badge>}
@@ -219,32 +229,40 @@ const TAGLINE: Record<ResolutionPathId, string> = {
 /* -------------------------------------------------------------------------- */
 
 /**
- * The AI route's mark: a sparkle on a violet-to-cyan tile with a soft breathing glow. It is
- * the only colour of its kind on the page, so the automatic path reads as a different kind of
- * thing from the human ones before a word is read. The glow respects reduced motion.
+ * The tab panel's header line: the route's tag in a chip, a small diamond, a hairline running
+ * to the path number. Pure geometry — no pictogram — so the panel reads as a protocol screen.
+ * The AI route alone gets the violet→cyan chip glow and gradient rule, so the automatic path
+ * reads as a different kind of thing from the human ones before a word is read.
  */
-export function AiGlyph({ size = 'md', glow = true }: { size?: 'sm' | 'md'; glow?: boolean }) {
-  const box = size === 'sm' ? 'w-5 h-5 rounded-md' : 'w-9 h-9 rounded-xl';
-  const icon = size === 'sm' ? 'w-3.5 h-3.5' : 'w-5 h-5';
+function PathRule({ id, pathNumber }: { id: ResolutionPathId; pathNumber: number }) {
+  const ai = id === 'resolver';
   return (
-    <span className="relative inline-flex shrink-0" aria-hidden="true">
-      {glow && (
-        <span
-          className={`absolute -inset-1 ${size === 'sm' ? 'rounded-lg' : 'rounded-2xl'} bg-gradient-to-br from-violet-500/50 to-cyan-400/40 blur-md motion-safe:animate-[pulse_3s_ease-in-out_infinite]`}
-        />
-      )}
+    <div className="flex items-center gap-2.5" aria-hidden="true">
       <span
-        className={`relative ${box} flex items-center justify-center border border-violet-400/40 bg-gradient-to-br from-violet-600/40 to-cyan-500/20`}
+        className={`relative inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 ${
+          ai
+            ? 'bg-gradient-to-r from-violet-500/15 to-cyan-400/10 shadow-[0_0_16px_-4px_rgba(34,211,238,0.45)]'
+            : 'border border-slate-700/80 bg-slate-500/5'
+        }`}
       >
-        <svg fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={`${icon} text-violet-100`}>
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 0 0-2.456 2.456ZM16.894 20.567 16.5 21.75l-.394-1.183a2.25 2.25 0 0 0-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 0 0 1.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 0 0 1.423 1.423l1.183.394-1.183.394a2.25 2.25 0 0 0-1.423 1.423Z"
-          />
-        </svg>
+        {ai && <span className="ai-ring" />}
+        <PathTag id={id} className={ai ? 'text-cyan-200' : 'text-slate-300'} />
+        {ai && <span className="ai-dot" />}
       </span>
-    </span>
+      <span
+        className={`w-1.5 h-1.5 shrink-0 rotate-45 border ${
+          ai ? 'border-cyan-300/80 bg-cyan-300/20' : 'border-slate-500'
+        }`}
+      />
+      <span
+        className={`h-px flex-1 ${
+          ai ? 'bg-gradient-to-r from-violet-400/60 via-cyan-400/25 to-transparent' : 'bg-gradient-to-r from-slate-600 to-transparent'
+        }`}
+      />
+      <span className="font-mono text-[10px] tracking-[0.15em] text-slate-600">
+        PATH {String(pathNumber).padStart(2, '0')}
+      </span>
+    </div>
   );
 }
 
