@@ -25,6 +25,7 @@
 
 import * as React from 'react';
 import type { ResolutionPathId, ResolutionPathInfo } from '@/lib/dispute/types';
+import { Handshake, Scale, Sparkles, type LucideIcon } from 'lucide-react';
 import { Badge } from './ui';
 
 export type ResolutionPathsProps = {
@@ -57,12 +58,7 @@ function PathCard({ path }: { path: ResolutionPathInfo }) {
       }`}
     >
       <div className="flex items-start gap-3">
-        <div className="w-14 shrink-0 pt-1">
-          <PathTag
-            id={path.id}
-            className={!open ? 'text-slate-600' : path.id === 'resolver' ? 'text-cyan-300' : 'text-slate-300'}
-          />
-        </div>
+        <PathIconTile id={path.id} muted={!open} />
 
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-3 flex-wrap">
@@ -126,28 +122,46 @@ function Fact({ term, children }: { term: string; children: React.ReactNode }) {
 }
 
 /**
- * Each route's mark is a code-style tag rather than a picture — `[ 3RD ]` for the named human
- * arbitrator, `[ AI ]` for the automatic one, `[ P2P ]` for a mutual settlement. Pictograms
- * (gavels, chips, handshakes) read as stickers on a screen that is moving money; a monospace
- * tag reads as a protocol label and still makes the list scannable before it is read. Colour
- * comes from the caller via `currentColor`, so one tag serves open, closed and selected states.
- * `aria-hidden`: it is redundant with the title beside it.
+ * One thin-line glyph per route, so the list is scannable before it is read: sparkles for the
+ * AI arbitrator, scales for the named human arbitrator, a handshake for a mutual settlement.
+ * Stroke 1.5 throughout, to sit with the page's hairline borders rather than shout over them.
+ * Colour and size come from the caller (`currentColor`, `className`), so one glyph serves open,
+ * closed and selected states. `aria-hidden`: it is redundant with the title beside it.
  */
-const PATH_TAG: Record<ResolutionPathId, string> = {
-  arbitrator: '3RD',
-  resolver: 'AI',
-  settlement: 'P2P',
+const PATH_GLYPH: Record<ResolutionPathId, LucideIcon> = {
+  arbitrator: Scale,
+  resolver: Sparkles,
+  settlement: Handshake,
 };
 
-export function PathTag({ id, className = '' }: { id: ResolutionPathId; className?: string }) {
+export function PathIcon({ id, className = 'w-4 h-4' }: { id: ResolutionPathId; className?: string }) {
+  const Glyph = PATH_GLYPH[id];
+  return <Glyph aria-hidden="true" strokeWidth={1.5} className={`shrink-0 ${className}`} />;
+}
+
+/**
+ * The glyph on a 36px tile, for card and panel headers. The AI route's tile carries the same
+ * signature as its tab — dark violet/cyan glass under the drifting `.ai-ring` — so the
+ * automatic path reads as a different kind of thing from the human ones before a word is read.
+ */
+export function PathIconTile({ id, muted = false }: { id: ResolutionPathId; muted?: boolean }) {
+  const ai = id === 'resolver' && !muted;
   return (
     <span
       aria-hidden="true"
-      className={`inline-flex items-center whitespace-pre font-mono text-[10px] font-bold leading-none tracking-[0.12em] ${className}`}
+      className={`relative w-9 h-9 shrink-0 rounded-xl flex items-center justify-center ${
+        ai
+          ? 'bg-gradient-to-br from-violet-500/20 to-cyan-400/10 shadow-[0_0_18px_-4px_rgba(139,92,246,0.55)]'
+          : muted
+            ? 'border border-slate-800/60 bg-slate-500/5'
+            : 'border border-slate-700/60 bg-slate-500/10'
+      }`}
     >
-      <span className="opacity-40">[ </span>
-      {PATH_TAG[id]}
-      <span className="opacity-40"> ]</span>
+      {ai && <span className="ai-ring" />}
+      <PathIcon
+        id={id}
+        className={`w-[18px] h-[18px] ${ai ? 'text-cyan-200' : muted ? 'text-slate-600' : 'text-slate-300'}`}
+      />
     </span>
   );
 }

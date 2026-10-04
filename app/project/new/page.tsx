@@ -22,7 +22,7 @@ import {
   describeTxError,
 } from '@/lib/paynode';
 import { useSiwe, RequireSiwe } from '@/app/providers/SiweProvider';
-import { PathTag } from '@/app/components/dispute/ResolutionPaths';
+import { PathIcon } from '@/app/components/dispute/ResolutionPaths';
 
 function ProjectForm() {
   const router = useRouter();
@@ -424,7 +424,7 @@ function ProjectForm() {
               >
                 <span className={`ai-ring transition-opacity ${!useArbitrator ? 'opacity-100' : 'opacity-25'}`} />
                 <span className="flex items-center gap-1.5 mb-2">
-                  <PathTag id="resolver" className={!useArbitrator ? 'text-cyan-200' : 'text-cyan-400/60'} />
+                  <PathIcon id="resolver" className={`w-[18px] h-[18px] ${!useArbitrator ? 'text-cyan-200' : 'text-cyan-400/60'}`} />
                   <span className={`ai-dot ${!useArbitrator ? '' : 'opacity-50'}`} aria-hidden />
                 </span>
                 <p className="text-white font-bold text-sm mb-1">Automatic (AI Resolver)</p>
@@ -445,7 +445,7 @@ function ProjectForm() {
                 }`}
               >
                 <span className="flex items-center mb-2">
-                  <PathTag id="arbitrator" className={useArbitrator ? 'text-slate-200' : 'text-slate-500'} />
+                  <PathIcon id="arbitrator" className={`w-[18px] h-[18px] ${useArbitrator ? 'text-slate-200' : 'text-slate-500'}`} />
                 </span>
                 <p className="text-white font-bold text-sm mb-1">Named arbitrator</p>
                 <p className="text-slate-400 text-xs">
@@ -478,7 +478,7 @@ function ProjectForm() {
                 discover them on day 30. */}
             <p className="text-xs text-slate-500 leading-relaxed">
               Either way, you and the builder keep the right to settle directly by mutual agreement{' '}
-              <PathTag id="settlement" className="text-slate-400 align-[1px]" /> at any point before the AI resolver or your named arbitrator rules. If a dispute goes
+              <PathIcon id="settlement" className="inline w-3.5 h-3.5 -mt-0.5 text-slate-400" /> at any point before the AI resolver or your named arbitrator rules. If a dispute goes
               unresolved for 30 days, anyone can settle it: funds split 50/50 if work was delivered,
               or return to you in full if it never was.
             </p>
